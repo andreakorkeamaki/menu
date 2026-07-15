@@ -182,6 +182,9 @@ function parseAllergens(value: string, path: string): StagedAllergen[] {
     return {
       code: knownCode ?? (normalizedName || `allergen_${index + 1}`),
       name,
+      origin: "document" as const,
+      evidence: name,
+      confirmed: true,
       confidence: confidence(issues),
       issues,
     };

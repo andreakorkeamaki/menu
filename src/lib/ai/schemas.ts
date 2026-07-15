@@ -28,6 +28,9 @@ export const StagedAllergenSchema = z
   .object({
     code: z.string().min(1),
     name: z.string().min(1),
+    origin: z.enum(["document", "ai_inferred"]),
+    evidence: z.string().nullable(),
+    confirmed: z.boolean().nullable(),
     confidence: ConfidenceSchema,
     issues: z.array(ImportIssueSchema),
   })

@@ -49,6 +49,7 @@ describe("OpenAI menu import background job", () => {
     expect(create).toHaveBeenCalledWith(expect.objectContaining({
       background: true,
       store: true,
+      instructions: expect.stringContaining("origin=ai_inferred, confirmed=null"),
       metadata: expect.objectContaining({ ai_job_id: "job-1" }),
       input: [expect.objectContaining({
         content: expect.arrayContaining([

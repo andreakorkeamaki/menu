@@ -3,9 +3,15 @@ import {
   saveMenuImportStaging,
   uploadIntakeMaterial,
 } from "@/app/ops/actions";
-import { MenuImportStagingSchema, type ImportIssue } from "@/lib/ai/schemas";
+import { StagingDecisionEditor } from "@/components/ops/staging-decision-editor";
+import type { ImportIssue, MenuImportStaging } from "@/lib/ai/schemas";
 import { requireOperator } from "@/lib/auth";
 import { formatCurrency, formatDateTime } from "@/lib/format";
+import {
+  getStagingReviewSummary,
+  isActionableIssue,
+  normalizeMenuImportStaging,
+} from "@/lib/import/staging-review";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
@@ -24,12 +30,13 @@ function formatJobError(value: unknown) {
 }
 
 function issueSummary(issues: ImportIssue[]) {
-  if (!issues.length) return null;
+  const actionable = issues.filter(isActionableIssue);
+  if (!actionable.length) return null;
   return (
     <ul className="staging-issues">
-      {issues.map((issue, index) => (
+      {actionable.map((issue, index) => (
         <li className={`issue-${issue.severity}`} key={`${issue.path}-${issue.code}-${index}`}>
-          <strong>{issue.severity === "error" ? "Bloccante" : issue.severity === "warning" ? "Da verificare" : "Nota"}</strong>
+          <strong>{issue.severity === "error" ? "Da risolvere" : "Controlla"}</strong>
           <span>{issue.message}</span>
         </li>
       ))}
@@ -47,7 +54,7 @@ const errorMessages: Record<string, string> = {
   "invalid-json": "Il JSON corretto non è sintatticamente valido.",
   "invalid-staging-schema": "Lo staging non rispetta lo schema richiesto: controlla campi, null e tipi.",
   "save-staging": "La revisione non è stata salvata; potrebbe essere già approvata.",
-  "review-required": "Risolvi gli issue bloccanti e tutti i prezzi mancanti prima dell’approvazione.",
+  "review-required": "Completa le sole decisioni indicate (suggerimenti AI, prezzi o supplementi) prima dell’approvazione.",
   approval: "L’approvazione transazionale non è riuscita; la bozza non è stata modificata.",
 };
 
@@ -78,7 +85,15 @@ export default async function ImportPage({
   const selected = (cases ?? []).find((entry) => entry.id === params.case) ?? (cases ?? [])[0];
   const caseStages = (stages ?? []).filter((entry) => entry.onboarding_case_id === selected?.id);
   const selectedStage = caseStages.find((entry) => entry.id === params.stage) ?? caseStages[0];
-  const parsedStaging = selectedStage ? MenuImportStagingSchema.safeParse(selectedStage.payload) : null;
+  let parsedStaging: MenuImportStaging | null = null;
+  if (selectedStage) {
+    try {
+      parsedStaging = normalizeMenuImportStaging(selectedStage.payload, selectedStage.parser);
+    } catch {
+      parsedStaging = null;
+    }
+  }
+  const reviewSummary = parsedStaging ? getStagingReviewSummary(parsedStaging) : null;
   let sourceUrl: string | null = null;
   if (selectedStage) {
     const { data } = await createAdminClient().storage
@@ -155,10 +170,10 @@ export default async function ImportPage({
         </section>
       </div>
 
-      {selectedStage && parsedStaging?.success && (
+      {selectedStage && parsedStaging && reviewSummary && (
         <section className="dashboard-panel staging-review">
           <div className="panel-heading">
-            <div><p className="eyebrow">Revisione import · rev. {selectedStage.revision}</p><h2>{parsedStaging.data.menu_name}</h2></div>
+            <div><p className="eyebrow">Revisione import · rev. {selectedStage.revision}</p><h2>{parsedStaging.menu_name}</h2></div>
             <span className={`status-pill status-${selectedStage.status}`}>{selectedStage.status}</span>
           </div>
 
@@ -175,15 +190,15 @@ export default async function ImportPage({
               {sourceUrl ? <a className="button button-light" href={sourceUrl} target="_blank" rel="noreferrer">Apri fonte per 5 minuti</a> : <p>Anteprima fonte non disponibile.</p>}
             </article>
             <article>
-              <p className="eyebrow">Controlli globali</p>
-              <strong>Confidenza {Math.round(parsedStaging.data.confidence.score * 100)}%</strong>
-              {parsedStaging.data.confidence.notes && <p>{parsedStaging.data.confidence.notes}</p>}
-              {issueSummary(parsedStaging.data.issues)}
+              <p className="eyebrow">Stato revisione</p>
+              <strong>{reviewSummary.requiredDecisions === 0 ? "Pronto per l’approvazione" : `${reviewSummary.requiredDecisions} decisioni richieste`}</strong>
+              <p>{reviewSummary.requiredDecisions === 0 ? "Non risultano dati obbligatori da completare." : "Trovi sotto soltanto le voci sulle quali devi scegliere."}</p>
+              {issueSummary(parsedStaging.issues)}
             </article>
           </div>
 
           <div className="staging-categories">
-            {parsedStaging.data.categories.map((category, categoryIndex) => (
+            {parsedStaging.categories.map((category, categoryIndex) => (
               <article key={`${category.name}-${categoryIndex}`}>
                 <header><div><span>{String(categoryIndex + 1).padStart(2, "0")}</span><h3>{category.name}</h3></div><small>{category.items.length} piatti</small></header>
                 {category.description && <p>{category.description}</p>}
@@ -195,12 +210,15 @@ export default async function ImportPage({
                       {item.description && <p>{item.description}</p>}
                       {item.ingredients && <small>Ingredienti: {item.ingredients}</small>}
                       <div className="staging-tags">
-                        {item.allergens.map((allergen) => <span key={allergen.code}>{allergen.name}</span>)}
+                        {item.allergens.filter((allergen) => allergen.confirmed === true).map((allergen) => (
+                          <span key={allergen.code}>{allergen.origin === "document" ? "Dal documento" : "AI confermata"} · {allergen.name}</span>
+                        ))}
                         {item.variants.map((variant) => <span key={variant.name}>{variant.name}: {variant.price_delta === null ? "delta mancante" : `+ ${formatCurrency(variant.price_delta, "it")}`}</span>)}
-                        {[item.available, item.vegetarian, item.vegan, item.gluten_free].some((value) => value === null) && <span className="uncertain">Campi booleani non dichiarati</span>}
-                        {item.confidence.score < 1 && <span className="uncertain">Confidenza {Math.round(item.confidence.score * 100)}%</span>}
+                        {item.available === false && <span className="uncertain">Non disponibile</span>}
+                        {item.vegetarian === true && <span>Vegetariano</span>}
+                        {item.vegan === true && <span>Vegano</span>}
+                        {item.gluten_free === true && <span>Senza glutine</span>}
                       </div>
-                      {item.confidence.notes && <small>{item.confidence.notes}</small>}
                       {issueSummary([
                         ...item.issues,
                         ...item.allergens.flatMap((allergen) => allergen.issues),
@@ -217,25 +235,33 @@ export default async function ImportPage({
           </div>
 
           {selectedStage.status === "review" ? (
-            <div className="staging-actions">
-              <details>
-                <summary>Correggi staging strutturato</summary>
-                <form action={saveMenuImportStaging} className="stack-form">
+            <>
+              <StagingDecisionEditor
+                staging={parsedStaging}
+                stagingId={selectedStage.id}
+                organizationId={selectedStage.organization_id}
+                caseId={selectedStage.onboarding_case_id}
+              />
+              <div className="staging-actions">
+                <details>
+                  <summary>Modifica tecnica (solo emergenza)</summary>
+                  <form action={saveMenuImportStaging} className="stack-form">
+                    <input type="hidden" name="staging_id" value={selectedStage.id} />
+                    <input type="hidden" name="organization_id" value={selectedStage.organization_id} />
+                    <input type="hidden" name="case_id" value={selectedStage.onboarding_case_id} />
+                    <label>JSON staging<textarea name="payload" rows={24} defaultValue={JSON.stringify(parsedStaging, null, 2)} spellCheck={false} /></label>
+                    <p className="form-note">Usa questa sezione soltanto per casi non gestibili dai controlli guidati sopra.</p>
+                    <button className="button button-light">Salva correzioni</button>
+                  </form>
+                </details>
+                <form action={approveMenuImport}>
                   <input type="hidden" name="staging_id" value={selectedStage.id} />
                   <input type="hidden" name="organization_id" value={selectedStage.organization_id} />
                   <input type="hidden" name="case_id" value={selectedStage.onboarding_case_id} />
-                  <label>JSON staging<textarea name="payload" rows={24} defaultValue={JSON.stringify(parsedStaging.data, null, 2)} spellCheck={false} /></label>
-                  <p className="form-note">Non inventare dati: correggi soltanto ciò che la fonte consente di verificare. Gli errori bloccanti e i prezzi null devono essere risolti prima di approvare.</p>
-                  <button className="button button-light">Salva correzioni</button>
+                  <button className="button button-dark" disabled={reviewSummary.requiredDecisions > 0}>Approva e scrivi nella bozza</button>
                 </form>
-              </details>
-              <form action={approveMenuImport}>
-                <input type="hidden" name="staging_id" value={selectedStage.id} />
-                <input type="hidden" name="organization_id" value={selectedStage.organization_id} />
-                <input type="hidden" name="case_id" value={selectedStage.onboarding_case_id} />
-                <button className="button button-dark">Approva e scrivi nella bozza</button>
-              </form>
-            </div>
+              </div>
+            </>
           ) : (
             <p className="form-success">Staging approvato. Riepilogo: {JSON.stringify(selectedStage.approval_summary)}.</p>
           )}

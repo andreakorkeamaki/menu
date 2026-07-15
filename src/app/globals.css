@@ -1908,6 +1908,114 @@ select:focus-visible {
   font-size: 0.75rem;
 }
 
+.staging-decision-editor {
+  display: grid;
+  gap: 1.25rem;
+  margin-top: 1.5rem;
+  padding: 1.25rem;
+  border: 1px solid #e0c98f;
+  border-radius: 0.9rem;
+  background: #fffaf0;
+}
+
+.staging-decision-editor > header,
+.staging-decision-editor > footer,
+.decision-list > article,
+.yes-no-control,
+.delta-control {
+  display: flex;
+  align-items: center;
+}
+
+.staging-decision-editor > header,
+.staging-decision-editor > footer,
+.decision-list > article {
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.staging-decision-editor > header p,
+.staging-decision-editor > footer span {
+  max-width: 38rem;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.decision-section {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.decision-section h4,
+.decision-section p {
+  margin: 0;
+}
+
+.decision-list {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.decision-list > article {
+  padding: 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 0.65rem;
+  background: var(--surface);
+}
+
+.decision-list > article > div:first-child {
+  display: grid;
+  gap: 0.1rem;
+}
+
+.decision-list small {
+  color: var(--muted);
+}
+
+.yes-no-control,
+.delta-control {
+  gap: 0.45rem;
+}
+
+.yes-no-control button,
+.delta-control > button {
+  min-height: 2.35rem;
+  padding: 0.45rem 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
+  background: var(--surface);
+  font: inherit;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.yes-no-control button.selected.yes {
+  color: #155f3c;
+  border-color: #83bd9d;
+  background: #e4f4eb;
+}
+
+.yes-no-control button.selected.no {
+  color: #8a342a;
+  border-color: #d9a49d;
+  background: #fae9e6;
+}
+
+.compact-number {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-weight: 800;
+}
+
+.compact-number input {
+  width: 7rem;
+  min-height: 2.35rem;
+  padding: 0.4rem 0.55rem;
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
+}
+
 .translation-editor-list > article {
   display: grid;
   gap: 1rem;
@@ -2134,6 +2242,18 @@ select:focus-visible {
   .staging-actions {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .staging-decision-editor > header,
+  .staging-decision-editor > footer,
+  .decision-list > article {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .yes-no-control,
+  .delta-control {
+    flex-wrap: wrap;
   }
 
   .hero-facts {
