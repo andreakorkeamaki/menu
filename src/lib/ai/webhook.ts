@@ -1,7 +1,7 @@
 import type OpenAI from "openai";
 import type { Response as OpenAIResponse } from "openai/resources/responses/responses";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { MenuImportStagingSchema } from "@/lib/ai/schemas";
+import { normalizeMenuImportStaging } from "@/lib/import/staging-review";
 
 type ResponseWebhookType =
   | "response.completed"
@@ -180,7 +180,9 @@ export async function processResponseWebhook(input: {
 
     if (response.status === "completed") {
       try {
-        output = MenuImportStagingSchema.parse(JSON.parse(response.output_text));
+        // Also accepts responses started with the previous prompt version: provenance is
+        // upgraded conservatively so every legacy OpenAI allergen requires human review.
+        output = normalizeMenuImportStaging(JSON.parse(response.output_text), "openai");
       } catch (parseError) {
         status = "failed";
         errorMessage =

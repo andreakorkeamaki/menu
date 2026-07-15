@@ -16,7 +16,7 @@ describe("parseCsvMenu", () => {
       name: "Bruschetta",
       price: 8.5,
       available: true,
-      allergens: [{ code: "gluten" }],
+      allergens: [{ code: "gluten", origin: "document", confirmed: true, evidence: "Glutine" }],
       variants: [
         { name: "Normale", price_delta: 0 },
         { name: "Grande", price_delta: 3 },

@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(58);
+select plan(59);
 
 select has_table('public', 'menus', 'draft menus table exists');
 select has_table('public', 'menu_publications', 'publication snapshot table exists');
@@ -369,6 +369,29 @@ select is(
   1::bigint,
   'idempotent provisioning does not duplicate the organization'
 );
+update public.menu_import_staging
+set parser = 'openai',
+    payload = jsonb_set(
+      payload,
+      '{categories,0,items,0,allergens}',
+      '[{"code":"gluten","name":"Glutine","origin":"ai_inferred","evidence":"Impasto","confirmed":null,"confidence":{"score":0.8,"notes":null},"issues":[]}]'::jsonb
+    )
+where id = '00000000-0000-0000-0000-0000000000b1';
+select throws_ok(
+  $$
+    select public.approve_menu_import(
+      '00000000-0000-0000-0000-0000000000b1',
+      '00000000-0000-0000-0000-000000000001'
+    )
+  $$,
+  null,
+  null,
+  'unreviewed AI allergen suggestions block transactional approval'
+);
+update public.menu_import_staging
+set parser = 'csv',
+    payload = jsonb_set(payload, '{categories,0,items,0,allergens}', '[]'::jsonb)
+where id = '00000000-0000-0000-0000-0000000000b1';
 select throws_ok(
   $$
     select public.approve_menu_import(
