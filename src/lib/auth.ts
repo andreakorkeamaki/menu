@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { ensureAllowlistedOperator } from "@/lib/operator-access";
 import { createClient } from "@/lib/supabase/server";
 import type { Membership, Profile } from "@/types/domain";
 
@@ -13,6 +14,8 @@ export async function getUserContext(): Promise<UserContext | null> {
   if (!supabase) return null;
   const { data: authData } = await supabase.auth.getUser();
   if (!authData.user) return null;
+
+  await ensureAllowlistedOperator(authData.user);
 
   const [profileResult, membershipResult, operatorResult] = await Promise.all([
     supabase.from("profiles").select("id,full_name,created_at").eq("id", authData.user.id).maybeSingle(),

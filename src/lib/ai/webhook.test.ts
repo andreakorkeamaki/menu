@@ -1,6 +1,8 @@
 import type OpenAI from "openai";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { describe, expect, it, vi } from "vitest";
 import {
+  createSupabaseWebhookRepository,
   processResponseWebhook,
   type ResponseWebhookEvent,
   type WebhookRepository,
@@ -58,6 +60,36 @@ describe("processResponseWebhook", () => {
       expect.objectContaining({ status: "review", output: staging }),
     );
     expect(repo.complete).toHaveBeenCalledWith("wh_1");
+  });
+
+  it("persists review output through the transactional staging RPC", async () => {
+    const maybeSingle = vi.fn(async () => ({ data: { id: "job-1" }, error: null }));
+    const secondEq = vi.fn(() => ({ maybeSingle }));
+    const firstEq = vi.fn(() => ({ eq: secondEq }));
+    const select = vi.fn(() => ({ eq: firstEq }));
+    const update = vi.fn();
+    const rpc = vi.fn(async () => ({ error: null }));
+    const admin = {
+      from: vi.fn(() => ({ select, update })),
+      rpc,
+    } as unknown as SupabaseClient;
+    const repo = createSupabaseWebhookRepository(admin);
+
+    await repo.updateJob("resp-1", {
+      status: "review",
+      output: staging,
+      error: null,
+      usage: { total_tokens: 15 },
+      completed_at: new Date().toISOString(),
+    });
+
+    expect(rpc).toHaveBeenCalledWith("record_menu_import_staging", {
+      p_job_id: "job-1",
+      p_payload: staging,
+      p_parser: "openai",
+      p_usage: { total_tokens: 15 },
+    });
+    expect(update).not.toHaveBeenCalled();
   });
 
   it("does not retrieve or update a duplicate delivery", async () => {

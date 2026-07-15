@@ -22,11 +22,11 @@ interface TranslationRowData {
 
 const ELIGIBLE_STATUSES = ["missing", "stale", "error"] as const;
 
-function sourceKey(entityType: string, entityId: string, fieldName: string) {
+export function translationSourceKey(entityType: string, entityId: string, fieldName: string) {
   return `${entityType}:${entityId}:${fieldName}`;
 }
 
-async function loadSourceMap(
+export async function loadTranslationSourceMap(
   client: SupabaseClient,
   organizationId: string,
   rows: Array<Pick<TranslationCandidate, "entityType" | "entityId" | "fieldName">>,
@@ -83,32 +83,32 @@ async function loadSourceMap(
 
   const sources = new Map<string, string>();
   for (const row of locations.data ?? []) {
-    sources.set(sourceKey("location", row.id, "tagline"), row.tagline_it ?? "");
+    sources.set(translationSourceKey("location", row.id, "tagline"), row.tagline_it ?? "");
     sources.set(
-      sourceKey("location", row.id, "description"),
+      translationSourceKey("location", row.id, "description"),
       row.description_it ?? "",
     );
   }
   for (const row of categories.data ?? []) {
-    sources.set(sourceKey("category", row.id, "name"), row.name_it ?? "");
+    sources.set(translationSourceKey("category", row.id, "name"), row.name_it ?? "");
     sources.set(
-      sourceKey("category", row.id, "description"),
+      translationSourceKey("category", row.id, "description"),
       row.description_it ?? "",
     );
   }
   for (const row of items.data ?? []) {
-    sources.set(sourceKey("item", row.id, "name"), row.name_it ?? "");
+    sources.set(translationSourceKey("item", row.id, "name"), row.name_it ?? "");
     sources.set(
-      sourceKey("item", row.id, "description"),
+      translationSourceKey("item", row.id, "description"),
       row.description_it ?? "",
     );
     sources.set(
-      sourceKey("item", row.id, "ingredients"),
+      translationSourceKey("item", row.id, "ingredients"),
       row.ingredients_it ?? "",
     );
   }
   for (const row of variants.data ?? []) {
-    sources.set(sourceKey("variant", row.id, "name"), row.name_it ?? "");
+    sources.set(translationSourceKey("variant", row.id, "name"), row.name_it ?? "");
   }
   return sources;
 }
@@ -132,7 +132,7 @@ export async function loadTranslationCandidates(
   if (error) throw new Error(`Lettura coda traduzioni non riuscita: ${error.message}`);
 
   const rows = (data ?? []) as TranslationRowData[];
-  const sourceMap = await loadSourceMap(
+  const sourceMap = await loadTranslationSourceMap(
     client,
     organizationId,
     rows.map((row) => ({
@@ -153,7 +153,7 @@ export async function loadTranslationCandidates(
       origin: row.origin,
       storedSourceHash: row.source_hash,
       sourceText:
-        sourceMap.get(sourceKey(row.entity_type, row.entity_id, row.field_name)) ?? "",
+        sourceMap.get(translationSourceKey(row.entity_type, row.entity_id, row.field_name)) ?? "",
     }),
   );
 }
@@ -208,7 +208,7 @@ export function createTranslationBatchRepository(
     },
 
     async saveDrafts(organizationId, locale, writes) {
-      const beforeSave = await loadSourceMap(
+      const beforeSave = await loadTranslationSourceMap(
         userClient,
         organizationId,
         writes.map(({ candidate }) => candidate),
@@ -219,7 +219,7 @@ export function createTranslationBatchRepository(
 
       for (const write of writes) {
         const currentSource = beforeSave.get(
-          sourceKey(
+          translationSourceKey(
             write.candidate.entityType,
             write.candidate.entityId,
             write.candidate.fieldName,
@@ -258,14 +258,14 @@ export function createTranslationBatchRepository(
 
       // Repair the narrow race where source text changes immediately after the pre-save check.
       if (savedWrites.length) {
-        const afterSave = await loadSourceMap(
+        const afterSave = await loadTranslationSourceMap(
           userClient,
           organizationId,
           savedWrites.map(({ candidate }) => candidate),
         );
         for (const write of savedWrites) {
           const currentSource = afterSave.get(
-            sourceKey(
+            translationSourceKey(
               write.candidate.entityType,
               write.candidate.entityId,
               write.candidate.fieldName,

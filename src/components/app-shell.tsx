@@ -26,7 +26,7 @@ export function AppShell({ children, context, area }: { children: React.ReactNod
         <nav aria-label={area === "ops" ? "Pannello operativo" : "Dashboard ristorante"}>
           {links.map(([href, label]) => <Link href={href} key={href}>{label}</Link>)}
         </nav>
-        {context.isOperator && (
+        {context.isOperator && (area === "dashboard" || context.memberships.length > 0) && (
           <Link className="mode-switch" href={area === "ops" ? "/dashboard" : "/ops"}>
             {area === "ops" ? "Vai al ristorante" : "Pannello operatore"}
           </Link>
@@ -34,7 +34,17 @@ export function AppShell({ children, context, area }: { children: React.ReactNod
         <form action={signOut}><button className="sidebar-signout">Esci</button></form>
       </aside>
       <div className="app-main">
-        <header className="app-mobile-header"><Brand compact /><span>{context.profile.full_name}</span></header>
+        <header className="app-mobile-header">
+          <div><Brand compact /><span>{context.profile.full_name}</span></div>
+          <nav aria-label={area === "ops" ? "Navigazione operatore mobile" : "Navigazione ristorante mobile"}>
+            {links.map(([href, label]) => <Link href={href} key={href}>{label}</Link>)}
+            {context.isOperator && (area === "dashboard" || context.memberships.length > 0) && (
+              <Link className="mobile-mode-switch" href={area === "ops" ? "/dashboard" : "/ops"}>
+                {area === "ops" ? "Ristorante" : "Operatore"}
+              </Link>
+            )}
+          </nav>
+        </header>
         {children}
       </div>
     </div>

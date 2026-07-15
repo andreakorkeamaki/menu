@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { requireMembership } from "@/lib/auth";
+import { resolveOwnerAuthUser } from "@/lib/auth-admin";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { normalizeSlug } from "@/lib/slug";
@@ -114,10 +115,43 @@ export async function inviteMember(formData: FormData) {
   if (!parsed.success) redirect("/dashboard/team?error=invalid");
   const admin = createAdminClient();
   const origin = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
-  const { data, error } = await admin.auth.admin.inviteUserByEmail(parsed.data.email, { redirectTo: `${origin}/auth/callback?next=/login/reset-password` });
-  if (error || !data.user) redirect("/dashboard/team?error=invite");
-  const { error: membershipError } = await admin.from("memberships").upsert({ organization_id: membership.organization_id, user_id: data.user.id, role: parsed.data.role }, { onConflict: "organization_id,user_id" });
-  if (membershipError) redirect("/dashboard/team?error=membership");
+  let resolved: Awaited<ReturnType<typeof resolveOwnerAuthUser>>;
+  try {
+    resolved = await resolveOwnerAuthUser({
+      admin,
+      email: parsed.data.email,
+      fullName: parsed.data.email.split("@")[0],
+      redirectTo: `${origin}/auth/callback?next=/login/reset-password`,
+    });
+  } catch {
+    redirect("/dashboard/team?error=invite");
+  }
+  const { error: membershipError } = await admin.from("memberships").upsert({ organization_id: membership.organization_id, user_id: resolved.user.id, role: parsed.data.role, created_by: membership.user_id }, { onConflict: "organization_id,user_id" });
+  if (membershipError) {
+    if (resolved.invitation === "sent") await admin.auth.admin.deleteUser(resolved.user.id);
+    redirect("/dashboard/team?error=membership");
+  }
   revalidatePath("/dashboard/team");
-  redirect("/dashboard/team?invited=1");
+  redirect(`/dashboard/team?invited=${resolved.invitation}`);
+}
+
+export async function reviewTranslation(formData: FormData) {
+  const { membership } = await requireMembership();
+  const parsed = z.object({
+    translation_id: uuid,
+    translated_text: z.string().trim().min(1).max(5000),
+    action: z.enum(["save", "approve"]),
+  }).safeParse(Object.fromEntries(formData));
+  if (!parsed.success) redirect("/dashboard/translations?translation_error=invalid");
+  const supabase = await createClient();
+  const { error } = await supabase!.rpc("review_translation", {
+    p_translation_id: parsed.data.translation_id,
+    p_organization_id: membership.organization_id,
+    p_translated_text: parsed.data.translated_text,
+    p_action: parsed.data.action,
+  });
+  if (error) redirect("/dashboard/translations?translation_error=review");
+  revalidatePath("/dashboard");
+  revalidatePath("/dashboard/translations");
+  redirect(`/dashboard/translations?reviewed=${parsed.data.action}`);
 }

@@ -1560,6 +1560,28 @@ select:focus-visible {
   background: #fff;
 }
 
+.language-summary article form {
+  margin-left: auto;
+}
+
+.text-button {
+  padding: 0;
+  border: 0;
+  color: var(--accent);
+  background: transparent;
+  cursor: pointer;
+  font-size: 0.75rem;
+  font-weight: 800;
+  text-decoration: underline;
+  text-underline-offset: 0.2rem;
+}
+
+.text-button:disabled {
+  color: var(--muted);
+  cursor: default;
+  text-decoration: none;
+}
+
 .language-summary article > span {
   display: grid;
   place-items: center;
@@ -1734,6 +1756,185 @@ select:focus-visible {
   margin-top: 2rem;
 }
 
+.staging-review {
+  margin-top: 0.9rem;
+}
+
+.staging-source-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(18rem, 0.8fr);
+  gap: 0.9rem;
+  margin-bottom: 1.5rem;
+}
+
+.staging-source-grid > article {
+  padding: 1.1rem;
+  border: 1px solid var(--line);
+  border-radius: 0.8rem;
+  background: var(--canvas);
+}
+
+.staging-source-image {
+  display: block;
+  width: min(100%, 34rem);
+  max-height: 26rem;
+  margin: 1rem 0;
+  border-radius: 0.7rem;
+  object-fit: contain;
+  background: #fff;
+}
+
+.staging-categories,
+.staging-items,
+.translation-editor-list {
+  display: grid;
+  gap: 0.8rem;
+}
+
+.staging-categories > article,
+.translation-editor-list > article {
+  padding: 1.1rem;
+  border: 1px solid var(--line);
+  border-radius: 0.8rem;
+}
+
+.staging-categories > article > header,
+.staging-items > div > header,
+.translation-editor-list > article > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.staging-categories > article > header > div,
+.translation-editor-list > article > header > div {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+}
+
+.staging-categories h3,
+.staging-source-grid h3 {
+  margin: 0;
+}
+
+.staging-items {
+  margin-top: 1rem;
+}
+
+.staging-items > div {
+  padding: 0.9rem;
+  border-radius: 0.65rem;
+  background: var(--canvas);
+}
+
+.staging-items p,
+.staging-source-grid p,
+.translation-source p {
+  color: var(--muted);
+}
+
+.staging-tags,
+.inline-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.staging-tags {
+  margin-top: 0.7rem;
+}
+
+.staging-tags span {
+  padding: 0.28rem 0.55rem;
+  border-radius: 100vw;
+  color: #536059;
+  background: #e8ede9;
+  font-size: 0.7rem;
+}
+
+.staging-tags .uncertain {
+  color: #825514;
+  background: #fff0cf;
+}
+
+.staging-issues {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0.8rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.staging-issues li {
+  display: grid;
+  grid-template-columns: 6rem 1fr;
+  gap: 0.5rem;
+  padding: 0.45rem 0.6rem;
+  border-radius: 0.45rem;
+  font-size: 0.75rem;
+}
+
+.staging-issues .issue-error { color: var(--danger); background: #fae9e6; }
+.staging-issues .issue-warning { color: #825514; background: #fff0cf; }
+.staging-issues .issue-info { color: #536059; background: #edf0ed; }
+
+.staging-actions {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-top: 1.5rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--line);
+}
+
+.staging-actions details {
+  flex: 1;
+}
+
+.staging-actions summary {
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.staging-actions details form {
+  margin-top: 1rem;
+}
+
+.staging-actions textarea {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.75rem;
+}
+
+.translation-editor-list > article {
+  display: grid;
+  gap: 1rem;
+}
+
+.translation-editor-list > article > header > div:last-child {
+  display: grid;
+  justify-items: end;
+  gap: 0.15rem;
+}
+
+.translation-editor-list small,
+.translation-source span {
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.translation-source {
+  padding: 0.8rem;
+  border-left: 3px solid var(--line);
+  background: var(--canvas);
+}
+
+.translation-source p {
+  margin: 0.3rem 0 0;
+}
+
 .ops-table-head,
 .ops-table article {
   display: grid;
@@ -1806,7 +2007,8 @@ select:focus-visible {
   .landing-hero,
   .auth-page,
   .settings-grid,
-  .import-layout {
+  .import-layout,
+  .staging-source-grid {
     grid-template-columns: 1fr;
   }
 
@@ -1840,18 +2042,46 @@ select:focus-visible {
     position: sticky;
     z-index: 20;
     top: 0;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
+    display: grid;
+    gap: 0.75rem;
     padding: 0.8rem 1rem;
     border-bottom: 1px solid var(--line);
     background: rgba(255, 255, 255, 0.94);
     backdrop-filter: blur(12px);
   }
 
-  .app-mobile-header > span {
+  .app-mobile-header > div {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .app-mobile-header > div > span {
     color: var(--muted);
     font-size: 0.75rem;
+  }
+
+  .app-mobile-header nav {
+    display: flex;
+    gap: 0.45rem;
+    overflow-x: auto;
+    padding-bottom: 0.15rem;
+  }
+
+  .app-mobile-header nav a {
+    flex: 0 0 auto;
+    padding: 0.45rem 0.65rem;
+    border: 1px solid var(--line);
+    border-radius: 100vw;
+    text-decoration: none;
+    font-size: 0.7rem;
+    font-weight: 750;
+  }
+
+  .app-mobile-header nav .mobile-mode-switch {
+    color: #fff;
+    border-color: var(--dark);
+    background: var(--dark);
   }
 
   .workspace {
@@ -1900,7 +2130,8 @@ select:focus-visible {
   .hero-actions,
   .hero-facts,
   .upload-dropzone,
-  .publish-bar {
+  .publish-bar,
+  .staging-actions {
     align-items: stretch;
     flex-direction: column;
   }

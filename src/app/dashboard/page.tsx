@@ -10,7 +10,7 @@ export default async function DashboardPage() {
   const [locationResult, menuResult, staleResult] = await Promise.all([
     supabase!.from("locations").select("id,name,slug,status").eq("organization_id", orgId).eq("status", "active").limit(1).maybeSingle(),
     supabase!.from("menus").select("id,name,current_publication_id,updated_at").eq("organization_id", orgId).limit(1).maybeSingle(),
-    supabase!.from("translations").select("id", { count: "exact", head: true }).eq("organization_id", orgId).in("status", ["missing", "stale", "error"]),
+    supabase!.from("translations").select("id", { count: "exact", head: true }).eq("organization_id", orgId).in("status", ["missing", "machine_draft", "stale", "error"]),
   ]);
   const location = locationResult.data;
   const menu = menuResult.data;
