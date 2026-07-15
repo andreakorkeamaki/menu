@@ -91,6 +91,25 @@ export function createSupabaseWebhookRepository(
     },
 
     async updateJob(responseId, update) {
+      if (update.status === "review" && update.output) {
+        const { data: job, error: jobError } = await admin
+          .from("ai_jobs")
+          .select("id")
+          .eq("response_id", responseId)
+          .eq("kind", "menu_import")
+          .maybeSingle();
+        if (jobError || !job) {
+          throw new Error(`Ricerca job AI non riuscita: ${jobError?.message ?? "job assente"}`);
+        }
+        const { error } = await admin.rpc("record_menu_import_staging", {
+          p_job_id: job.id,
+          p_payload: update.output,
+          p_parser: "openai",
+          p_usage: update.usage,
+        });
+        if (error) throw new Error(`Salvataggio staging AI non riuscito: ${error.message}`);
+        return;
+      }
       const { data, error } = await admin
         .from("ai_jobs")
         .update(update)

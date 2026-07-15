@@ -2,11 +2,26 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(46);
+select plan(58);
 
 select has_table('public', 'menus', 'draft menus table exists');
 select has_table('public', 'menu_publications', 'publication snapshot table exists');
+select has_table('public', 'menu_import_staging', 'operator import staging table exists');
+select has_table('public', 'variant_allergens', 'variant allergen relation exists');
 select has_function('public', 'publish_menu', array['uuid', 'uuid'], 'publish RPC has the application signature');
+select has_function(
+  'public', 'provision_organization',
+  array['text', 'text', 'text', 'text', 'uuid', 'text', 'text'],
+  'provisioning RPC includes transactional contact metadata'
+);
+select has_function(
+  'public', 'approve_menu_import', array['uuid', 'uuid'],
+  'staging approval RPC has an explicit tenant parameter'
+);
+select has_function(
+  'public', 'review_translation', array['uuid', 'uuid', 'text', 'text'],
+  'translation review RPC has an explicit tenant parameter'
+);
 
 select is(
   (
@@ -18,11 +33,12 @@ select is(
         'profiles', 'platform_staff', 'organizations', 'memberships', 'locations', 'menus',
         'menu_categories', 'menu_items', 'item_variants', 'allergens', 'item_allergens',
         'translations', 'themes', 'media_assets', 'qr_codes', 'menu_publications',
-        'onboarding_cases', 'ai_jobs', 'webhook_events', 'audit_logs'
+        'onboarding_cases', 'ai_jobs', 'webhook_events', 'audit_logs',
+        'menu_import_staging', 'variant_allergens'
       ])
       and relation.relrowsecurity
   ),
-  20::bigint,
+  22::bigint,
   'RLS is enabled on every exposed application table'
 );
 
@@ -35,10 +51,11 @@ select is(
       and columns.table_name = any (array[
         'memberships', 'locations', 'menus', 'menu_categories', 'menu_items', 'item_variants',
         'allergens', 'item_allergens', 'translations', 'themes', 'media_assets', 'qr_codes',
-        'menu_publications', 'onboarding_cases', 'ai_jobs', 'webhook_events', 'audit_logs'
+        'menu_publications', 'onboarding_cases', 'ai_jobs', 'webhook_events', 'audit_logs',
+        'menu_import_staging', 'variant_allergens'
       ])
   ),
-  17::bigint,
+  19::bigint,
   'every tenant-owned table carries organization_id'
 );
 
@@ -53,12 +70,70 @@ select is(
   'approved media bucket is public'
 );
 
+update public.ai_jobs
+set input_file_path = '00000000-0000-0000-0000-000000000001/menu-test.csv',
+    input = jsonb_build_object(
+      'storage_bucket', 'intake',
+      'filename', 'menu-test.csv',
+      'mime_type', 'text/csv'
+    )
+where id = '00000000-0000-0000-0000-0000000000a1';
+
+insert into public.menu_import_staging (
+  id, organization_id, onboarding_case_id, menu_id, ai_job_id,
+  source_bucket, source_path, source_filename, source_mime_type,
+  parser, payload, created_by
+) values (
+  '00000000-0000-0000-0000-0000000000b1',
+  '00000000-0000-0000-0000-000000000001',
+  '00000000-0000-0000-0000-000000000091',
+  '00000000-0000-0000-0000-000000000021',
+  '00000000-0000-0000-0000-0000000000a1',
+  'intake', '00000000-0000-0000-0000-000000000001/menu-test.csv',
+  'menu-test.csv', 'text/csv', 'csv',
+  '{
+    "menu_name":"Menu importato",
+    "source_locale":"it",
+    "currency":"EUR",
+    "categories":[{
+      "name":"Piatti importati",
+      "description":null,
+      "position":0,
+      "items":[{
+        "source_id":"csv-row-1",
+        "name":"Piatto verificato",
+        "description":"Descrizione verificata",
+        "ingredients":"Ingrediente uno, ingrediente due",
+        "price":12.5,
+        "available":true,
+        "vegetarian":false,
+        "vegan":false,
+        "gluten_free":false,
+        "allergens":[],
+        "variants":[],
+        "confidence":{"score":1,"notes":null},
+        "issues":[]
+      }],
+      "confidence":{"score":1,"notes":null},
+      "issues":[]
+    }],
+    "confidence":{"score":1,"notes":null},
+    "issues":[]
+  }'::jsonb,
+  '10000000-0000-0000-0000-000000000001'
+);
+
 set local role authenticated;
 select set_config('request.jwt.claim.sub', '10000000-0000-0000-0000-000000000011', true);
 select set_config('request.jwt.claims', '{"sub":"10000000-0000-0000-0000-000000000011","role":"authenticated"}', true);
 
 select is((select count(*) from public.organizations), 1::bigint, 'owner sees only its organization');
 select is((select count(*) from public.menus), 1::bigint, 'owner sees only its menu');
+select is(
+  (select count(*) from public.menu_import_staging),
+  0::bigint,
+  'restaurant owner cannot read operator-only intake staging'
+);
 select is(
   (select count(*) from public.profiles where id = '10000000-0000-0000-0000-000000000012'),
   1::bigint,
@@ -264,14 +339,65 @@ select is(
 select set_config('request.jwt.claim.sub', '10000000-0000-0000-0000-000000000001', true);
 select set_config('request.jwt.claims', '{"sub":"10000000-0000-0000-0000-000000000001","role":"authenticated"}', true);
 select is((select count(*) from public.organizations), 2::bigint, 'operator can see every seeded tenant');
+select is(
+  (select count(*) from public.menu_import_staging where status = 'review'),
+  1::bigint,
+  'operator can read the staging review queue'
+);
 select lives_ok(
   $$
     select public.provision_organization(
       'Tenant Test', 'tenant-test', 'Locale Test', 'locale-test',
-      '10000000-0000-0000-0000-000000000021'
+      '10000000-0000-0000-0000-000000000021', 'Owner Due',
+      'owner-b@menuinterattivo.local'
     )
   $$,
   'operator can provision a complete tenant transactionally'
+);
+select lives_ok(
+  $$
+    select public.provision_organization(
+      'Tenant Test', 'tenant-test', 'Locale Test', 'locale-test',
+      '10000000-0000-0000-0000-000000000021', 'Owner Due',
+      'owner-b@menuinterattivo.local'
+    )
+  $$,
+  'retrying the same provisioning request is idempotent'
+);
+select is(
+  (select count(*) from public.organizations where slug = 'tenant-test'),
+  1::bigint,
+  'idempotent provisioning does not duplicate the organization'
+);
+select throws_ok(
+  $$
+    select public.approve_menu_import(
+      '00000000-0000-0000-0000-0000000000b1',
+      '00000000-0000-0000-0000-000000000002'
+    )
+  $$,
+  null,
+  null,
+  'staging cannot be approved through a mismatched tenant ID'
+);
+select lives_ok(
+  $$
+    select public.approve_menu_import(
+      '00000000-0000-0000-0000-0000000000b1',
+      '00000000-0000-0000-0000-000000000001'
+    )
+  $$,
+  'operator can approve reviewed staging into the tenant draft'
+);
+select is(
+  (
+    select count(*) from public.translations
+    where organization_id = '00000000-0000-0000-0000-000000000001'
+      and entity_type in ('category', 'item')
+      and status = 'missing'
+  ),
+  16::bigint,
+  'approved import creates missing translation rows with fresh source hashes'
 );
 select lives_ok(
   $$

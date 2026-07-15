@@ -349,6 +349,33 @@ export function rowsToMenuStaging(
           rowNumber,
         ),
       );
+      const seenItems = new Set<string>();
+      items.forEach((item, itemIndex) => {
+        const hasSourceId = Boolean(item.source_id);
+        const identity = hasSourceId
+          ? `source:${item.source_id!.trim().toLocaleLowerCase("en-US")}`
+          : `name:${normalizeHeader(item.name)}`;
+        if (seenItems.has(identity)) {
+          item.issues.push(
+            issue(
+              "duplicate_value",
+              hasSourceId ? "error" : "warning",
+              `categories[${categoryIndex}].items[${itemIndex}]`,
+              hasSourceId
+                ? "Identificativo sorgente duplicato nella categoria: correggere o rimuovere la riga."
+                : "Nome piatto duplicato nella categoria: verificare che siano due voci distinte.",
+              item.source_id ?? item.name,
+            ),
+          );
+          item.confidence = confidence([
+            ...item.issues,
+            ...item.allergens.flatMap((allergen) => allergen.issues),
+            ...item.variants.flatMap((variant) => variant.issues),
+          ]);
+        } else {
+          seenItems.add(identity);
+        }
+      });
       return {
         name,
         description: category.description,

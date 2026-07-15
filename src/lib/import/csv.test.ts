@@ -35,4 +35,21 @@ describe("parseCsvMenu", () => {
     ]);
     expect("published" in staged).toBe(false);
   });
+
+  it("keeps duplicate source rows visible and blocking in staging", () => {
+    const staged = parseCsvMenu([
+      "Categoria;ID;Nome;Prezzo",
+      "Primi;dish-1;Risotto;12",
+      "Primi;dish-1;Risotto bis;13",
+    ].join("\n"));
+
+    expect(staged.categories[0].items).toHaveLength(2);
+    expect(staged.categories[0].items[1].issues).toContainEqual(
+      expect.objectContaining({
+        code: "duplicate_value",
+        severity: "error",
+        original_value: "dish-1",
+      }),
+    );
+  });
 });

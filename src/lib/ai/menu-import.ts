@@ -5,6 +5,7 @@ import { getAiModelSettings } from "@/lib/ai/config";
 import { createOpenAIClient } from "@/lib/ai/client";
 import { MenuImportStagingSchema } from "@/lib/ai/schemas";
 import { createAdminClient } from "@/lib/supabase/admin";
+import type { OpenAISourceKind } from "@/lib/import/source";
 
 export const MENU_IMPORT_PROMPT_VERSION = "menu-import-v1";
 
@@ -18,6 +19,7 @@ export interface UploadMenuSourceInput {
   data: Uint8Array | ArrayBuffer;
   filename: string;
   mimeType?: string;
+  sourceKind?: OpenAISourceKind;
   openai?: OpenAI;
 }
 
@@ -25,19 +27,24 @@ export async function uploadMenuSource({
   data,
   filename,
   mimeType,
+  sourceKind = "document",
   openai = createOpenAIClient(),
 }: UploadMenuSourceInput) {
   const bytes = data instanceof Uint8Array ? data : new Uint8Array(data);
   const file = await toFile(bytes, filename, mimeType ? { type: mimeType } : undefined);
-  return openai.files.create({ file, purpose: "user_data" });
+  return openai.files.create({
+    file,
+    purpose: sourceKind === "image" ? "vision" : "user_data",
+  });
 }
 
 export interface CreateMenuImportJobInput {
   organizationId: string;
+  jobId: string;
   onboardingCaseId?: string;
   fileId: string;
   filename?: string;
-  createdBy?: string;
+  sourceKind?: OpenAISourceKind;
   openai?: OpenAI;
   admin?: SupabaseClient;
 }
@@ -52,10 +59,11 @@ function mapInitialStatus(status?: string) {
 
 export async function createMenuImportBackgroundJob({
   organizationId,
+  jobId,
   onboardingCaseId,
   fileId,
   filename,
-  createdBy,
+  sourceKind = "document",
   openai = createOpenAIClient(),
   admin = createAdminClient(),
 }: CreateMenuImportJobInput) {
@@ -63,6 +71,9 @@ export async function createMenuImportBackgroundJob({
 
   let response;
   try {
+    const sourceContent = sourceKind === "image"
+      ? { type: "input_image" as const, file_id: fileId, detail: "high" as const }
+      : { type: "input_file" as const, file_id: fileId };
     response = await openai.responses.create({
       model: settings.model,
       background: true,
@@ -79,7 +90,7 @@ export async function createMenuImportBackgroundJob({
                 ? `Estrai il menu dal file '${filename}'.`
                 : "Estrai il menu dal file allegato.",
             },
-            { type: "input_file", file_id: fileId },
+            sourceContent,
           ],
         },
       ],
@@ -88,6 +99,7 @@ export async function createMenuImportBackgroundJob({
       },
       metadata: {
         organization_id: organizationId,
+        ai_job_id: jobId,
         job_type: "menu_import",
         prompt_version: MENU_IMPORT_PROMPT_VERSION,
         ...(onboardingCaseId ? { onboarding_case_id: onboardingCaseId } : {}),
@@ -99,30 +111,30 @@ export async function createMenuImportBackgroundJob({
   }
 
   const job = {
-    organization_id: organizationId,
-    onboarding_case_id: onboardingCaseId ?? null,
-    kind: "menu_import",
-    model: settings.model,
-    prompt_version: MENU_IMPORT_PROMPT_VERSION,
     response_id: response.id,
     status: mapInitialStatus(response.status),
     attempts: 1,
-    input: { file_id: fileId, filename: filename ?? null },
     usage: response.usage ?? null,
-    output: null,
     error: response.error ? { message: response.error.message } : null,
-    created_by: createdBy ?? null,
+    started_at: new Date().toISOString(),
     completed_at: response.status === "completed" ? new Date().toISOString() : null,
   };
-  const { data, error } = await admin.from("ai_jobs").insert(job).select("id").single();
-  if (error) {
+  const { data, error } = await admin
+    .from("ai_jobs")
+    .update(job)
+    .eq("id", jobId)
+    .eq("organization_id", organizationId)
+    .eq("kind", "menu_import")
+    .select("id")
+    .maybeSingle();
+  if (error || !data) {
     try {
       await openai.responses.cancel(response.id);
     } catch {
       // The response may have already completed; the actionable error is persistence.
     }
     throw new Error(
-      `La risposta OpenAI ${response.id} è stata avviata ma il job non è stato registrato: ${error.message}`,
+      `La risposta OpenAI ${response.id} è stata avviata ma il job non è stato aggiornato: ${error?.message ?? "job assente"}`,
     );
   }
 
