@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { MENU_TRANSLATION_PROMPT_VERSION } from "@/lib/ai/menu-translation";
+import { TRANSLATION_BATCH_LIMIT } from "@/lib/ai/translation-limits";
 import { sourceHash } from "@/lib/ai/source-hash";
 import type {
   TargetLocale,
@@ -116,7 +117,7 @@ export async function loadTranslationSourceMap(
 export async function loadTranslationCandidates(
   client: SupabaseClient,
   organizationId: string,
-  limit = 200,
+  limit = TRANSLATION_BATCH_LIMIT,
 ) {
   const { data, error } = await client
     .from("translations")

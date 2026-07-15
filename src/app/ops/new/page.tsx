@@ -1,4 +1,5 @@
 import { provisionOrganization } from "@/app/ops/actions";
+import { PendingSubmitButton } from "@/components/pending-submit-button";
 
 const errorMessages: Record<string, string> = {
   invalid: "Controlla nomi, slug ed email.",
@@ -19,7 +20,7 @@ export default async function NewRestaurantPage({ searchParams }: { searchParams
         <label>Slug pubblico<input name="slug" placeholder="osteria-del-portico" pattern="[a-zA-Z0-9 -]+" required /><small>Diventerà /r/osteria-del-portico; il QR resta separato.</small></label>
         <div className="field-grid"><label>Responsabile<input name="contact_name" placeholder="Nome e cognome" /></label><label>Email proprietario<input name="owner_email" type="email" required /></label></div>
         <aside className="form-note"><strong>Cosa verrà creato</strong><p>Tenant isolato, sede attiva, menu vuoto, tema Editoriale, QR stabile, membership owner e checklist onboarding.</p></aside>
-        <button className="button button-dark">Crea e continua con i materiali</button>
+        <PendingSubmitButton className="button button-dark" pendingLabel="Creazione del ristorante…">Crea e continua con i materiali</PendingSubmitButton>
       </form>
     </main>
   );

@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(59);
+select plan(64);
 
 select has_table('public', 'menus', 'draft menus table exists');
 select has_table('public', 'menu_publications', 'publication snapshot table exists');
@@ -21,6 +21,10 @@ select has_function(
 select has_function(
   'public', 'review_translation', array['uuid', 'uuid', 'text', 'text'],
   'translation review RPC has an explicit tenant parameter'
+);
+select has_function(
+  'public', 'approve_translation_drafts', array['uuid'],
+  'bulk translation approval RPC has an explicit tenant parameter'
 );
 
 select is(
@@ -258,6 +262,61 @@ select is(
   'dashboard publication pointer matches the current immutable snapshot'
 );
 
+do $$
+declare
+  translation_row record;
+begin
+  for translation_row in
+    select id, translated_text
+    from public.translations
+    where organization_id = '00000000-0000-0000-0000-000000000001'
+      and entity_type = 'item'
+      and entity_id = '00000000-0000-0000-0000-000000000041'
+      and field_name = 'description'
+      and locale in ('en', 'de')
+  loop
+    perform public.review_translation(
+      translation_row.id,
+      '00000000-0000-0000-0000-000000000001',
+      translation_row.translated_text,
+      'save'
+    );
+  end loop;
+end;
+$$;
+
+select is(
+  public.approve_translation_drafts('00000000-0000-0000-0000-000000000001'),
+  2,
+  'editor can approve every ready draft in one atomic call'
+);
+select is(
+  (
+    select count(*)
+    from public.translations
+    where organization_id = '00000000-0000-0000-0000-000000000001'
+      and entity_type = 'item'
+      and entity_id = '00000000-0000-0000-0000-000000000041'
+      and field_name = 'description'
+      and locale in ('en', 'de')
+      and status = 'approved'
+      and approved_by = '10000000-0000-0000-0000-000000000012'
+      and approved_at is not null
+  ),
+  2::bigint,
+  'bulk approval records the human reviewer and timestamp'
+);
+select throws_ok(
+  $$
+    select public.approve_translation_drafts(
+      '00000000-0000-0000-0000-000000000002'
+    )
+  $$,
+  null,
+  null,
+  'bulk approval cannot target another tenant'
+);
+
 update public.menu_items
 set name_it = 'Crescentine aggiornate'
 where id = '00000000-0000-0000-0000-000000000041';
@@ -325,6 +384,12 @@ select throws_ok(
   null,
   null,
   'anon cannot read memberships'
+);
+select throws_ok(
+  $$select public.approve_translation_drafts('00000000-0000-0000-0000-000000000001')$$,
+  null,
+  null,
+  'anon cannot call bulk translation approval'
 );
 
 set local role authenticated;

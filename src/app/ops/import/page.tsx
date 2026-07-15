@@ -3,7 +3,9 @@ import {
   saveMenuImportStaging,
   uploadIntakeMaterial,
 } from "@/app/ops/actions";
+import { AiJobMonitor } from "@/components/ops/ai-job-monitor";
 import { StagingDecisionEditor } from "@/components/ops/staging-decision-editor";
+import { PendingSubmitButton } from "@/components/pending-submit-button";
 import type { ImportIssue, MenuImportStaging } from "@/lib/ai/schemas";
 import { requireOperator } from "@/lib/auth";
 import { formatCurrency, formatDateTime } from "@/lib/format";
@@ -84,6 +86,10 @@ export default async function ImportPage({
   ]);
   const selected = (cases ?? []).find((entry) => entry.id === params.case) ?? (cases ?? [])[0];
   const caseStages = (stages ?? []).filter((entry) => entry.onboarding_case_id === selected?.id);
+  const caseJobs = (jobs ?? []).filter((job) => job.onboarding_case_id === selected?.id);
+  const activeJobCount = caseJobs.filter((job) =>
+    ["pending", "queued", "running"].includes(job.status),
+  ).length;
   const selectedStage = caseStages.find((entry) => entry.id === params.stage) ?? caseStages[0];
   let parsedStaging: MenuImportStaging | null = null;
   if (selectedStage) {
@@ -146,12 +152,13 @@ export default async function ImportPage({
                   <span>PDF, CSV, XLSX, DOC/DOCX, JPG, PNG o WEBP · massimo 20 MB</span>
                   <input name="file" type="file" accept=".pdf,.csv,.xlsx,.doc,.docx,.jpg,.jpeg,.png,.webp" required />
                 </label>
-                <button className="button button-dark">Carica e analizza</button>
+                <PendingSubmitButton className="button button-dark" pendingLabel="Caricamento e avvio…">Carica e analizza</PendingSubmitButton>
               </form>
 
+              <AiJobMonitor activeJobs={activeJobCount} />
               <div className="job-list">
                 <h3>Elaborazioni</h3>
-                {(jobs ?? []).filter((job) => job.onboarding_case_id === selected.id).map((job) => {
+                {caseJobs.map((job) => {
                   const jobError = formatJobError(job.error);
                   const stage = caseStages.find((entry) => entry.ai_job_id === job.id);
                   return (
@@ -251,14 +258,14 @@ export default async function ImportPage({
                     <input type="hidden" name="case_id" value={selectedStage.onboarding_case_id} />
                     <label>JSON staging<textarea name="payload" rows={24} defaultValue={JSON.stringify(parsedStaging, null, 2)} spellCheck={false} /></label>
                     <p className="form-note">Usa questa sezione soltanto per casi non gestibili dai controlli guidati sopra.</p>
-                    <button className="button button-light">Salva correzioni</button>
+                    <PendingSubmitButton className="button button-light" pendingLabel="Salvataggio…">Salva correzioni</PendingSubmitButton>
                   </form>
                 </details>
                 <form action={approveMenuImport}>
                   <input type="hidden" name="staging_id" value={selectedStage.id} />
                   <input type="hidden" name="organization_id" value={selectedStage.organization_id} />
                   <input type="hidden" name="case_id" value={selectedStage.onboarding_case_id} />
-                  <button className="button button-dark" disabled={reviewSummary.requiredDecisions > 0}>Approva e scrivi nella bozza</button>
+                  <PendingSubmitButton className="button button-dark" pendingLabel="Scrittura nella bozza…" disabled={reviewSummary.requiredDecisions > 0}>Approva e scrivi nella bozza</PendingSubmitButton>
                 </form>
               </div>
             </>
