@@ -1,0 +1,28 @@
+# dependencies
+/node_modules
+
+# next.js
+/.next/
+/out/
+
+# testing
+/coverage/
+/playwright-report/
+/test-results/
+/output/playwright/
+
+# local configuration
+.env
+.env.local
+.env.*.local
+
+# platform files
+.vercel
+.DS_Store
+*.swp
+*.tsbuildinfo
+next-env.d.ts
+
+# Supabase local runtime
+/supabase/.branches
+/supabase/.temp
