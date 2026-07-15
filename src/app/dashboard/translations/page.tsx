@@ -1,4 +1,11 @@
 import { reviewTranslation } from "@/app/dashboard/actions";
+import { BulkApproveTranslations } from "@/components/dashboard/bulk-approve-translations";
+import {
+  TranslationGenerationForm,
+  TranslationGenerationProgress,
+  TranslationGenerationProvider,
+} from "@/components/dashboard/translation-generation";
+import { PendingSubmitButton } from "@/components/pending-submit-button";
 import {
   loadTranslationSourceMap,
   translationSourceKey,
@@ -24,13 +31,18 @@ export default async function TranslationsPage({
     generated?: string;
     requested?: string;
     reviewed?: string;
+    approved_all?: string;
     translation_error?: string;
   }>;
 }) {
   const params = await searchParams;
   const { membership } = await requireMembership();
   const supabase = await createClient();
-  const { data } = await supabase!.from("translations").select("*").eq("organization_id", membership.organization_id).order("locale").order("status").limit(500);
+  const [{ data }, { count: eligibleCount }, { count: readyDraftCount }] = await Promise.all([
+    supabase!.from("translations").select("*").eq("organization_id", membership.organization_id).order("locale").order("status").limit(500),
+    supabase!.from("translations").select("id", { count: "exact", head: true }).eq("organization_id", membership.organization_id).in("status", ["missing", "stale", "error"]).eq("origin", "machine"),
+    supabase!.from("translations").select("id", { count: "exact", head: true }).eq("organization_id", membership.organization_id).eq("status", "machine_draft").not("translated_text", "is", null),
+  ]);
   const rows = (data ?? []) as TranslationRow[];
   const sourceMap = await loadTranslationSourceMap(
     supabase!,
@@ -45,36 +57,57 @@ export default async function TranslationsPage({
     locale,
     rows: rows.filter((row) => row.locale === locale),
   }));
+  const visibleEligible = rows.filter(
+    (row) =>
+      ["missing", "stale", "error"].includes(row.status) &&
+      row.origin === "machine",
+  ).length;
+  const totalEligible = eligibleCount ?? visibleEligible;
 
   return (
-    <main className="workspace wide-workspace">
-      <header className="workspace-heading">
-        <div><p className="eyebrow">Traduzioni</p><h1>Ogni lingua sotto controllo</h1><p>L’AI lavora solo su righe mancanti, obsolete o in errore; le correzioni manuali non vengono sovrascritte.</p></div>
-        <form action="/api/openai/translations/start" method="post"><button className="button button-dark">Genera tutte le righe idonee</button></form>
-      </header>
+    <TranslationGenerationProvider>
+      <main className="workspace wide-workspace">
+        <header className="workspace-heading">
+          <div><p className="eyebrow">Traduzioni</p><h1>Ogni lingua sotto controllo</h1><p>L’AI lavora solo su righe mancanti, obsolete o in errore; le correzioni manuali non vengono sovrascritte.</p></div>
+          <TranslationGenerationForm
+            count={totalEligible}
+            label={`Generazione di ${totalEligible} traduzioni in corso`}
+            buttonClassName="button button-dark"
+          >
+            Genera tutte le righe idonee
+          </TranslationGenerationForm>
+        </header>
 
-      {params.generated !== undefined && <p className="form-success" role="status">Generate {params.generated} bozze su {params.requested ?? "0"} richieste. Ora revisionale prima di pubblicare.</p>}
-      {params.reviewed && <p className="form-success" role="status">Traduzione {params.reviewed === "approve" ? "approvata" : "salvata come correzione manuale"}.</p>}
-      {params.translation_error && <p className="form-error" role="alert">{params.translation_error === "partial" ? "Alcune lingue non sono state generate: le altre bozze sono state conservate." : params.translation_error === "use-post" ? "La generazione richiede una conferma POST dal pulsante della pagina." : "Operazione traduzioni non riuscita."}</p>}
+        <TranslationGenerationProgress />
+        {params.generated !== undefined && <p className="form-success" role="status">Generate {params.generated} bozze su {params.requested ?? "0"} richieste. Ora revisionale prima di pubblicare.</p>}
+        {params.reviewed && <p className="form-success" role="status">Traduzione {params.reviewed === "approve" ? "approvata" : "salvata come correzione manuale"}.</p>}
+        {params.approved_all !== undefined && <p className="form-success" role="status">Approvate {params.approved_all} traduzioni in un’unica operazione. Le righe non pronte sono rimaste in coda.</p>}
+        {params.translation_error && <p className="form-error" role="alert">{params.translation_error === "partial" ? "Alcune lingue non sono state generate: le altre bozze sono state conservate." : params.translation_error === "use-post" ? "La generazione richiede una conferma POST dal pulsante della pagina." : params.translation_error === "bulk-approval" ? "L’approvazione multipla è stata annullata: nessuna bozza è stata approvata. Controlla che le traduzioni siano ancora aggiornate." : "Operazione traduzioni non riuscita."}</p>}
 
-      <section className="language-summary">
-        {byLocale.map(({ locale, rows: localeRows }) => {
-          const eligible = localeRows.filter((row) => ["missing", "stale", "error"].includes(row.status) && row.origin === "machine").length;
-          return (
-            <article key={locale}>
-              <span>{locale.toUpperCase()}</span>
-              <div><strong>{LOCALE_LABELS[locale]}</strong><small>{localeRows.filter((row) => row.status !== "approved").length} da rivedere</small></div>
-              <form action="/api/openai/translations/start" method="post">
-                <input type="hidden" name="locale" value={locale} />
-                <button className="text-button" disabled={!eligible}>Genera {eligible}</button>
-              </form>
-            </article>
-          );
-        })}
-      </section>
+        <section className="language-summary">
+          {byLocale.map(({ locale, rows: localeRows }) => {
+            const eligible = localeRows.filter((row) => ["missing", "stale", "error"].includes(row.status) && row.origin === "machine").length;
+            return (
+              <article key={locale}>
+                <span>{locale.toUpperCase()}</span>
+                <div><strong>{LOCALE_LABELS[locale]}</strong><small>{localeRows.filter((row) => row.status !== "approved").length} da rivedere</small></div>
+                <TranslationGenerationForm
+                  count={eligible}
+                  label={`Generazione ${LOCALE_LABELS[locale]} in corso`}
+                  locale={locale}
+                  buttonClassName="text-button"
+                >
+                  Genera {eligible}
+                </TranslationGenerationForm>
+              </article>
+            );
+          })}
+        </section>
 
-      <section className="dashboard-panel translation-table-panel">
-        <div className="panel-heading"><div><p className="eyebrow">Coda qualità</p><h2>Campi tradotti</h2></div><span className="count-badge">{rows.length}</span></div>
+        <BulkApproveTranslations count={readyDraftCount ?? 0} />
+
+        <details className="dashboard-panel translation-table-panel translation-details">
+        <summary className="panel-heading"><div><p className="eyebrow">Dettaglio facoltativo</p><h2>Controlla o correggi le traduzioni</h2><small>Apri soltanto se vuoi leggere le singole righe.</small></div><span className="count-badge">{rows.length}</span></summary>
         {rows.length ? (
           <div className="translation-editor-list">
             {rows.map((row) => {
@@ -91,22 +124,27 @@ export default async function TranslationsPage({
                     <input type="hidden" name="translation_id" value={row.id} />
                     <label>Traduzione<textarea name="translated_text" rows={3} defaultValue={row.translated_text ?? ""} required /></label>
                     <div className="inline-actions">
-                      <button className="button button-light" name="action" value="save">Salva correzione manuale</button>
-                      <button className="button button-dark" name="action" value="approve">Approva</button>
+                      <PendingSubmitButton className="button button-light" name="action" value="save" pendingLabel="Salvataggio…">Salva correzione manuale</PendingSubmitButton>
+                      <PendingSubmitButton className="button button-dark" name="action" value="approve" pendingLabel="Approvazione…">Approva</PendingSubmitButton>
                     </div>
                   </form>
                   {machineEligible && (
-                    <form action="/api/openai/translations/start" method="post">
-                      <input type="hidden" name="translation_id" value={row.id} />
-                      <button className="text-button">Rigenera solo questa riga</button>
-                    </form>
+                    <TranslationGenerationForm
+                      count={1}
+                      label={`Rigenerazione ${row.entity_type}.${row.field_name} in corso`}
+                      translationId={row.id}
+                      buttonClassName="text-button"
+                    >
+                      Rigenera solo questa riga
+                    </TranslationGenerationForm>
                   )}
                 </article>
               );
             })}
           </div>
         ) : <div className="empty-state"><h3>Nessuna traduzione in coda</h3><p>Le righe vengono create automaticamente quando importi o modifichi un testo italiano.</p></div>}
-      </section>
-    </main>
+        </details>
+      </main>
+    </TranslationGenerationProvider>
   );
 }

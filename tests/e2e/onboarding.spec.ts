@@ -68,19 +68,16 @@ test.describe("operator to owner pilot flow", () => {
     );
     await expect(ownerPage.getByRole("heading", { name: "Ogni lingua sotto controllo" })).toBeVisible();
     await ownerPage.getByRole("button", { name: "Genera tutte le righe idonee" }).click();
+    const generationProgress = ownerPage.locator(".ai-progress");
+    await expect(generationProgress).toBeVisible();
+    await expect(generationProgress).toContainText(/Sto preparando|righe elaborate/);
+    await expect(generationProgress).toContainText("Tempo trascorso");
     await expect(ownerPage.getByRole("status")).toContainText(/Generate \d+ bozze/);
     await expect(ownerPage.getByRole("alert")).toHaveCount(0);
 
-    const reviewRows = ownerPage.locator(".translation-editor-list article").filter({
-      has: ownerPage.getByText("Da revisionare", { exact: true }),
-    });
-    while (await reviewRows.count()) {
-      const row = reviewRows.first();
-      const translation = row.getByLabel("Traduzione");
-      await expect(translation).not.toHaveValue("");
-      await row.getByRole("button", { name: "Approva", exact: true }).click();
-      await expect(ownerPage.getByRole("status")).toContainText("Traduzione approvata");
-    }
+    ownerPage.once("dialog", (dialog) => dialog.accept());
+    await ownerPage.getByRole("button", { name: "Approva tutto" }).click();
+    await expect(ownerPage.getByRole("status")).toContainText(/Approvate \d+ traduzioni/);
 
     await ownerPage.goto("/dashboard/menu");
     await expect(ownerPage.locator('input[name="name"][value="Polpetta del test"]')).toBeVisible();

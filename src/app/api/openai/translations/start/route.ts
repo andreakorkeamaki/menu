@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { runTranslationBatch, type TargetLocale } from "@/lib/ai/translation-batch";
+import { TRANSLATION_BATCH_LIMIT } from "@/lib/ai/translation-limits";
 import {
   createTranslationBatchRepository,
   loadTranslationCandidates,
@@ -11,7 +12,7 @@ import { createClient } from "@/lib/supabase/server";
 export const runtime = "nodejs";
 
 const SelectionSchema = z.object({
-  translationIds: z.array(z.uuid()).max(200),
+  translationIds: z.array(z.uuid()).max(TRANSLATION_BATCH_LIMIT),
   locales: z.array(z.enum(["en", "fr", "de", "es"])).max(4),
 });
 

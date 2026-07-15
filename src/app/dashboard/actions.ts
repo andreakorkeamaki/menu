@@ -155,3 +155,15 @@ export async function reviewTranslation(formData: FormData) {
   revalidatePath("/dashboard/translations");
   redirect(`/dashboard/translations?reviewed=${parsed.data.action}`);
 }
+
+export async function approveAllTranslations() {
+  const { membership } = await requireMembership();
+  const supabase = await createClient();
+  const { data, error } = await supabase!.rpc("approve_translation_drafts", {
+    p_organization_id: membership.organization_id,
+  });
+  if (error) redirect("/dashboard/translations?translation_error=bulk-approval");
+  revalidatePath("/dashboard");
+  revalidatePath("/dashboard/translations");
+  redirect(`/dashboard/translations?approved_all=${Number(data ?? 0)}`);
+}

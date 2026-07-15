@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { saveMenuImportStaging } from "@/app/ops/actions";
+import { PendingSubmitButton } from "@/components/pending-submit-button";
 import type { MenuImportStaging } from "@/lib/ai/schemas";
 import {
   getStagingReviewSummary,
@@ -188,7 +189,7 @@ export function StagingDecisionEditor({
 
       <footer>
         <span>{summary.requiredDecisions === 0 ? "Pronto: salva e poi approva la bozza." : "Completa le scelte evidenziate, poi salva."}</span>
-        <button className="button button-dark" disabled={summary.requiredDecisions > 0}>Salva decisioni</button>
+        <PendingSubmitButton className="button button-dark" pendingLabel="Salvataggio decisioni…" disabled={summary.requiredDecisions > 0}>Salva decisioni</PendingSubmitButton>
       </footer>
     </form>
   );
