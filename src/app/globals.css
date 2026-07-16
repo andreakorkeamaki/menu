@@ -780,7 +780,7 @@ a {
 
 :root {
   --ink: #19201c;
-  --muted: #667069;
+  --muted: #5f6862;
   --line: #dfe4df;
   --paper: #ffffff;
   --canvas: #f3f5f2;
@@ -862,8 +862,11 @@ a {
 
 .button:focus-visible,
 .text-link:focus-visible,
+.landing-nav a:focus-visible,
+.landing-email-link:focus-visible,
 .app-sidebar a:focus-visible,
-.sidebar-signout:focus-visible {
+.sidebar-signout:focus-visible,
+.mobile-signout:focus-visible {
   outline: 3px solid color-mix(in srgb, var(--accent) 65%, white);
   outline-offset: 3px;
 }
@@ -1105,6 +1108,60 @@ a {
   line-height: 1.6;
 }
 
+.landing-cta {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(22rem, 0.8fr);
+  gap: clamp(3rem, 8vw, 9rem);
+  padding: clamp(5rem, 10vw, 9rem) max(1.25rem, calc((100vw - 82rem) / 2));
+  color: #f8f2e8;
+  background: var(--dark);
+}
+
+.landing-cta .eyebrow {
+  color: #d89775;
+}
+
+.landing-cta h2 {
+  max-width: 15ch;
+  margin: 0;
+  font-family: var(--font-serif);
+  font-size: clamp(2.6rem, 5.6vw, 5.5rem);
+  font-weight: 500;
+  letter-spacing: -0.055em;
+  line-height: 0.98;
+}
+
+.landing-cta-content {
+  align-self: end;
+}
+
+.landing-cta-content > p {
+  margin: 0 0 1.75rem;
+  color: #bdc7c0;
+  font-size: clamp(1rem, 1.6vw, 1.18rem);
+  line-height: 1.65;
+}
+
+.landing-cta-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 1.2rem;
+}
+
+.landing-email-link {
+  color: #fff;
+  text-underline-offset: 0.3rem;
+  font-weight: 750;
+}
+
+.landing-cta-content small {
+  display: block;
+  margin-top: 1.5rem;
+  color: #89978e;
+  line-height: 1.55;
+}
+
 .auth-page {
   display: grid;
   grid-template-columns: minmax(24rem, 0.9fr) minmax(26rem, 1.1fr);
@@ -1323,6 +1380,54 @@ select:focus-visible {
   min-height: 100vh;
   padding: 1.25rem;
   background: var(--canvas);
+}
+
+.not-found-page {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  padding: clamp(1.25rem, 5vw, 4.5rem);
+  color: #f8f2e8;
+  background:
+    radial-gradient(circle at 82% 18%, rgba(165, 66, 50, 0.42), transparent 34%),
+    var(--dark);
+}
+
+.not-found-page > section {
+  width: min(100%, 54rem);
+  margin: auto 0;
+}
+
+.not-found-page .eyebrow {
+  color: #d89775;
+}
+
+.not-found-page h1 {
+  max-width: 11ch;
+  margin: 0;
+  font-family: var(--font-serif);
+  font-size: clamp(3.2rem, 9vw, 7rem);
+  font-weight: 500;
+  letter-spacing: -0.06em;
+  line-height: 0.92;
+}
+
+.not-found-page section > p:not(.eyebrow) {
+  max-width: 39rem;
+  margin: 1.8rem 0;
+  color: #bdc7c0;
+  line-height: 1.65;
+}
+
+.not-found-page section > div {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 1.3rem;
+}
+
+.not-found-page .text-link {
+  color: #fff;
 }
 
 .auth-card {
@@ -1859,6 +1964,58 @@ select:focus-visible {
   gap: 0.9rem;
 }
 
+.opening-hours-editor {
+  display: grid;
+  gap: 0.9rem;
+  margin: 0.3rem 0;
+  padding: 1rem;
+  border: 1px solid var(--line);
+  border-radius: 0.8rem;
+}
+
+.opening-hours-editor legend {
+  padding: 0 0.35rem;
+  color: var(--ink);
+  font-family: var(--font-serif);
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+
+.opening-hours-editor > p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
+
+.opening-hours-list {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.opening-hours-row {
+  display: grid;
+  grid-template-columns: minmax(8rem, 0.7fr) minmax(14rem, 1.3fr) auto;
+  align-items: end;
+  gap: 0.65rem;
+}
+
+.opening-hours-row label {
+  display: grid;
+  gap: 0.45rem;
+  color: #4e5952;
+  font-size: 0.78rem;
+  font-weight: 750;
+}
+
+.opening-hours-remove {
+  min-height: 2.9rem;
+}
+
+.opening-hours-add {
+  justify-self: start;
+}
+
 .qr-card {
   color: #f5f3ee;
   background: var(--dark);
@@ -2289,6 +2446,7 @@ select:focus-visible {
 @media (max-width: 850px) {
   .landing-hero,
   .auth-page,
+  .landing-cta,
   .settings-grid,
   .import-layout,
   .staging-source-grid {
@@ -2351,14 +2509,26 @@ select:focus-visible {
     padding-bottom: 0.15rem;
   }
 
-  .app-mobile-header nav a {
+  .app-mobile-header nav a,
+  .mobile-signout {
     flex: 0 0 auto;
     padding: 0.45rem 0.65rem;
     border: 1px solid var(--line);
     border-radius: 100vw;
+    color: var(--ink);
+    background: #fff;
     text-decoration: none;
     font-size: 0.7rem;
     font-weight: 750;
+  }
+
+  .app-mobile-header nav form {
+    flex: 0 0 auto;
+  }
+
+  .mobile-signout {
+    min-height: 100%;
+    cursor: pointer;
   }
 
   .app-mobile-header nav .mobile-mode-switch {
@@ -2412,6 +2582,7 @@ select:focus-visible {
 
   .hero-actions,
   .hero-facts,
+  .landing-cta-actions,
   .upload-dropzone,
   .publish-bar,
   .bulk-approval-bar,
@@ -2447,6 +2618,7 @@ select:focus-visible {
 
   .field-grid,
   .language-summary,
+  .opening-hours-row,
   .product-editor-row {
     grid-template-columns: 1fr;
   }

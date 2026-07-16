@@ -4,6 +4,7 @@ import { useDeferredValue, useMemo, useState } from "react";
 import { formatCurrency, localized } from "@/lib/format";
 import type { Locale, PublicCategory } from "@/types/domain";
 import { PUBLIC_COPY } from "./copy";
+import { localizeAllergen } from "./localization";
 
 interface MenuBrowserProps {
   categories: PublicCategory[];
@@ -32,7 +33,7 @@ export function MenuBrowser({ categories, locale }: MenuBrowserProps) {
               localized(item.name, locale),
               localized(item.description, locale),
               localized(item.ingredients, locale),
-              ...item.allergens,
+              ...item.allergens.flatMap((allergen) => [allergen, localizeAllergen(allergen, locale)]),
             ].join(" "),
           ).includes(needle),
         ),
@@ -108,7 +109,7 @@ export function MenuBrowser({ categories, locale }: MenuBrowserProps) {
                       </div>
                       {item.allergens.length > 0 ? (
                         <p className="public-allergens">
-                          <strong>{copy.allergens}:</strong> {item.allergens.join(", ")}
+                          <strong>{copy.allergens}:</strong> {item.allergens.map((allergen) => localizeAllergen(allergen, locale)).join(", ")}
                         </p>
                       ) : null}
                       {item.variants.length > 0 ? (

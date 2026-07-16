@@ -102,7 +102,7 @@ export interface PublicMenuSnapshot {
   location: PublicLocation;
   menu: {
     id: string;
-    name: string;
+    name: string | LocalizedText;
     currency: "EUR";
     source_locale: "it";
     active_locales: Locale[];
