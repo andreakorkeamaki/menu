@@ -8,6 +8,7 @@ import { resolveOwnerAuthUser } from "@/lib/auth-admin";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { normalizeSlug } from "@/lib/slug";
+import { parseOpeningHoursInput } from "@/lib/opening-hours";
 
 const uuid = z.uuid();
 const menuItemSchema = z.object({
@@ -83,15 +84,19 @@ export async function publishMenu(formData: FormData) {
 
 export async function saveLocation(formData: FormData) {
   const { membership } = await requireMembership();
+  const openingHours = parseOpeningHoursInput(
+    formData.getAll("opening_days"),
+    formData.getAll("opening_times"),
+  );
   const parsed = z.object({
     id: uuid, name: z.string().trim().min(1).max(160), slug: z.string().trim().min(1), tagline_it: z.string().trim().max(240), description_it: z.string().trim().max(3000),
     address: z.string().trim().max(300), city: z.string().trim().max(120), phone: z.string().trim().max(50), email: z.union([z.email(), z.literal("")]),
     whatsapp_url: z.union([z.url(), z.literal("")]), reservation_url: z.union([z.url(), z.literal("")]), map_url: z.union([z.url(), z.literal("")]), instagram_url: z.union([z.url(), z.literal("")]),
   }).safeParse(Object.fromEntries(formData));
-  if (!parsed.success) redirect("/dashboard/site?error=invalid-site");
+  if (!parsed.success || !openingHours.success) redirect("/dashboard/site?error=invalid-site");
   const { id, slug, ...values } = parsed.data;
   const supabase = await createClient();
-  const { error } = await supabase!.from("locations").update({ ...values, slug: normalizeSlug(slug), email: values.email || null, whatsapp_url: values.whatsapp_url || null, reservation_url: values.reservation_url || null, map_url: values.map_url || null, instagram_url: values.instagram_url || null }).eq("id", id).eq("organization_id", membership.organization_id);
+  const { error } = await supabase!.from("locations").update({ ...values, opening_hours: openingHours.data, slug: normalizeSlug(slug), email: values.email || null, whatsapp_url: values.whatsapp_url || null, reservation_url: values.reservation_url || null, map_url: values.map_url || null, instagram_url: values.instagram_url || null }).eq("id", id).eq("organization_id", membership.organization_id);
   if (error) redirect("/dashboard/site?error=save-site");
   revalidatePath("/dashboard/site");
   redirect("/dashboard/site?saved=1");

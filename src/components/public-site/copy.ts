@@ -3,6 +3,7 @@ import type { Locale } from "@/types/domain";
 export const PUBLIC_COPY: Record<
   Locale,
   {
+    mainNavigation: string;
     navMenu: string;
     navInfo: string;
     reserve: string;
@@ -27,6 +28,7 @@ export const PUBLIC_COPY: Record<
   }
 > = {
   it: {
+    mainNavigation: "Navigazione principale",
     navMenu: "Menu",
     navInfo: "Informazioni",
     reserve: "Prenota",
@@ -50,6 +52,7 @@ export const PUBLIC_COPY: Record<
     publishedMenu: "Menu digitale",
   },
   en: {
+    mainNavigation: "Main navigation",
     navMenu: "Menu",
     navInfo: "Information",
     reserve: "Book a table",
@@ -73,6 +76,7 @@ export const PUBLIC_COPY: Record<
     publishedMenu: "Digital menu",
   },
   fr: {
+    mainNavigation: "Navigation principale",
     navMenu: "Menu",
     navInfo: "Informations",
     reserve: "Réserver",
@@ -96,6 +100,7 @@ export const PUBLIC_COPY: Record<
     publishedMenu: "Menu numérique",
   },
   de: {
+    mainNavigation: "Hauptnavigation",
     navMenu: "Speisekarte",
     navInfo: "Informationen",
     reserve: "Tisch reservieren",
@@ -119,6 +124,7 @@ export const PUBLIC_COPY: Record<
     publishedMenu: "Digitale Speisekarte",
   },
   es: {
+    mainNavigation: "Navegación principal",
     navMenu: "Menú",
     navInfo: "Información",
     reserve: "Reservar",

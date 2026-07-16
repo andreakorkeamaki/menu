@@ -5,6 +5,7 @@ import type { Locale, PublicMenuSnapshot } from "@/types/domain";
 import { PUBLIC_COPY } from "./copy";
 import { LanguageSwitcher } from "./language-switcher";
 import { MenuBrowser } from "./menu-browser";
+import { localizeOpeningDays, localizedMenuName } from "./localization";
 
 interface PublicSiteProps {
   snapshot: PublicMenuSnapshot;
@@ -56,7 +57,7 @@ export function PublicSite({ snapshot, locale }: PublicSiteProps) {
   };
 
   return (
-    <div className="public-site" data-theme={snapshot.theme.key} style={themeStyle(snapshot)}>
+    <div className="public-site" data-theme={snapshot.theme.key} lang={locale} style={themeStyle(snapshot)}>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: safeJson(restaurantJsonLd) }} />
 
       <header className="public-header">
@@ -69,7 +70,7 @@ export function PublicSite({ snapshot, locale }: PublicSiteProps) {
           )}
           <strong>{location.name}</strong>
         </Link>
-        <nav className="public-main-nav" aria-label="Main navigation">
+        <nav className="public-main-nav" aria-label={copy.mainNavigation}>
           <a href="#menu">{copy.navMenu}</a>
           <a href="#info">{copy.navInfo}</a>
           {location.reservation_url ? (
@@ -112,7 +113,7 @@ export function PublicSite({ snapshot, locale }: PublicSiteProps) {
         <section className="public-menu-section" id="menu" aria-labelledby="menu-title">
           <div className="public-section-heading">
             <p>{copy.menuEyebrow}</p>
-            <h2 id="menu-title">{menu.name}</h2>
+            <h2 id="menu-title">{localizedMenuName(menu.name, locale)}</h2>
           </div>
           <MenuBrowser categories={menu.categories} locale={locale} />
         </section>
@@ -137,7 +138,7 @@ export function PublicSite({ snapshot, locale }: PublicSiteProps) {
             <dl>
               {location.opening_hours.map((row) => (
                 <div key={`${row.days}-${row.hours}`}>
-                  <dt>{row.days}</dt>
+                  <dt>{localizeOpeningDays(row.days, locale)}</dt>
                   <dd>{row.hours}</dd>
                 </div>
               ))}

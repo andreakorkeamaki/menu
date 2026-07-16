@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { cache } from "react";
 import { DEMO_SNAPSHOT } from "@/lib/demo-data";
 import { createClient } from "@/lib/supabase/server";
 import type { PublicMenuSnapshot } from "@/types/domain";
@@ -34,7 +35,7 @@ const snapshotSchema = z.object({
   }),
   menu: z.object({
     id: z.string(),
-    name: z.string(),
+    name: z.union([z.string(), localizedTextSchema]),
     currency: z.literal("EUR"),
     source_locale: z.literal("it"),
     active_locales: z.array(z.enum(["it", "en", "fr", "de", "es"])),
@@ -94,7 +95,7 @@ function parseSnapshot(value: unknown): PublicMenuSnapshot | null {
  * Loads only the immutable current publication. Draft tables are deliberately
  * not part of the public read path.
  */
-export async function getPublishedMenu(locationSlug: string): Promise<PublicMenuSnapshot | null> {
+async function loadPublishedMenu(locationSlug: string): Promise<PublicMenuSnapshot | null> {
   const supabase = await createClient();
 
   if (supabase) {
@@ -111,6 +112,10 @@ export async function getPublishedMenu(locationSlug: string): Promise<PublicMenu
 
   return locationSlug === DEMO_SNAPSHOT.location.slug ? DEMO_SNAPSHOT : null;
 }
+
+// Metadata and page content share this request-scoped read instead of querying
+// the immutable current publication twice during a single render.
+export const getPublishedMenu = cache(loadPublishedMenu);
 
 /** Resolve a stable QR code on every visit, so changing the destination does not require reprinting. */
 export async function getQrDestinationPath(shortCode: string): Promise<string | null> {

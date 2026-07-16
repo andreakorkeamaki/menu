@@ -4,6 +4,7 @@ import { getPublishedMenu } from "@/lib/public-menu";
 import { localized } from "@/lib/format";
 import { SUPPORTED_LOCALES, type Locale } from "@/types/domain";
 import { PublicSite } from "./public-site";
+import { localizedMenuName } from "./localization";
 
 export function isLocale(value: string): value is Locale {
   return SUPPORTED_LOCALES.some((locale) => locale === value);
@@ -13,7 +14,7 @@ export async function buildPublicMetadata(locationSlug: string, locale: Locale):
   const snapshot = await getPublishedMenu(locationSlug);
   if (!snapshot || !snapshot.menu.active_locales.includes(locale)) return {};
 
-  const title = `${snapshot.location.name} — ${snapshot.menu.name}`;
+  const title = `${snapshot.location.name} — ${localizedMenuName(snapshot.menu.name, locale)}`;
   const description = localized(snapshot.location.description, locale);
   const canonical = locale === "it" ? `/r/${locationSlug}` : `/r/${locationSlug}/${locale}`;
 

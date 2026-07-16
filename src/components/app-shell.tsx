@@ -43,6 +43,7 @@ export function AppShell({ children, context, area }: { children: React.ReactNod
                 {area === "ops" ? "Ristorante" : "Operatore"}
               </Link>
             )}
+            <form action={signOut}><button className="mobile-signout">Esci</button></form>
           </nav>
         </header>
         {children}
