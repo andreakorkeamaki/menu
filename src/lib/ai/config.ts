@@ -10,6 +10,8 @@ const DEFAULT_MODELS: Record<AiTask, string> = {
   translation: "gpt-5.6-luna",
 };
 
+const DEFAULT_IMAGE_MODEL = "gpt-image-2";
+
 function nonEmptyEnv(name: string) {
   const value = process.env[name]?.trim();
   return value || undefined;
@@ -23,6 +25,10 @@ export function getAiModelSettings(task: AiTask): AiModelSettings {
     model: nonEmptyEnv(envName) ?? DEFAULT_MODELS[task],
     reasoningEffort: task === "translation" ? "xhigh" : "high",
   };
+}
+
+export function getImageModel() {
+  return nonEmptyEnv("OPENAI_IMAGE_MODEL") ?? DEFAULT_IMAGE_MODEL;
 }
 
 export function requireOpenAIApiKey() {

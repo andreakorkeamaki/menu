@@ -105,17 +105,24 @@ export function PublicSite({ snapshot, locale, preview }: PublicSiteProps) {
 
       <main>
         <section className="public-hero" aria-labelledby="restaurant-name">
-          {location.cover_url ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img className="public-hero-image" src={location.cover_url} alt="" fetchPriority="high" />
-          ) : (
-            <div className="public-hero-art" aria-hidden="true">
-              <div className="public-art-plate">
-                <span>{location.name.slice(0, 1)}</span>
+          <div className="public-hero-media">
+            {location.cover_url ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img className="public-hero-image" src={location.cover_url} alt="" fetchPriority="high" />
+            ) : (
+              <div className="public-hero-art" aria-hidden="true">
+                <div className="public-art-plate">
+                  <span>{location.name.slice(0, 1)}</span>
+                </div>
+                <p>{location.city}</p>
               </div>
-              <p>{location.city}</p>
+            )}
+            <div className="public-hero-stamp" aria-hidden="true">
+              <span>Cucina</span>
+              <strong>{location.city}</strong>
+              <i>↘</i>
             </div>
-          )}
+          </div>
           <div className="public-hero-copy">
             <div className="public-hero-topline">
               <p>{location.city}</p>
@@ -132,6 +139,7 @@ export function PublicSite({ snapshot, locale, preview }: PublicSiteProps) {
                 </a>
               ) : null}
             </div>
+            <p className="public-hero-note" aria-hidden="true">Scorri per scegliere ·</p>
           </div>
         </section>
 

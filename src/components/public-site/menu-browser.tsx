@@ -175,7 +175,7 @@ export function MenuBrowser({ categories, locale }: MenuBrowserProps) {
 
               <div className="public-item-list">
                 {category.items.map((item) => (
-                  <article className={`public-menu-item${item.available ? "" : " is-unavailable"}`} key={item.id}>
+                  <article className={`public-menu-item${item.image_url ? " has-image" : ""}${item.available ? "" : " is-unavailable"}`} key={item.id}>
                     {item.image_url ? (
                       // Snapshot media URLs are approved public assets. Native img avoids external-host config coupling.
                       // eslint-disable-next-line @next/next/no-img-element

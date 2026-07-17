@@ -11,6 +11,7 @@ import {
 } from "@/app/dashboard/actions";
 import { PendingSubmitButton } from "@/components/pending-submit-button";
 import { MenuItemMediaUploader, type MenuItemMediaAsset } from "@/components/dashboard/menu-item-media-uploader";
+import { MenuImageGeneration } from "@/components/dashboard/menu-image-generation";
 import { formatCurrency } from "@/lib/format";
 
 type Category = { id: string; name_it: string; slug: string; sort_order: number };
@@ -50,6 +51,12 @@ export function MenuEditor({ menu, categories, items, allergens, itemAllergens, 
           );
         })}</ol>
       </section>
+      <MenuImageGeneration items={items.map((item) => ({
+        id: item.id,
+        name: item.name_it,
+        hasImage: Boolean(item.image_url),
+        mediaStatus: mediaAssets[item.id]?.approval_status,
+      }))} />
       <section className="dashboard-panel product-panel">
         <div className="panel-heading"><div><p className="eyebrow">Catalogo</p><h2>Piatti, prezzi e ordine</h2></div><span className="count-badge">{items.length}</span></div>
         <p className="panel-intro">Ogni modifica resta in bozza. Usa “Organizza” per spostare o rimuovere un piatto.</p>

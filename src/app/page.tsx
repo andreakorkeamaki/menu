@@ -35,16 +35,23 @@ export default function HomePage() {
         </div>
         <div className="landing-preview" aria-label="Anteprima MenuInterattivo">
           <div className="preview-browser-bar"><i /><i /><i /><span>menuinterattivo.it/r/osteria</span><strong>Online</strong></div>
+          {/* Generated specifically for the product demo; kept local so the experience has no stock-photo dependency. */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img className="landing-preview-photo" src="/images/demo-osteria/servizio.webp" alt="Tagliatelle servite al tavolo mentre viene versato il vino" />
           <div className="preview-card">
             <div className="preview-card-top"><p className="preview-kicker">Osteria del Portico</p><span>Bologna · IT</span></div>
             <h2>Cucina bolognese,<br />senza fretta.</h2>
             <div className="preview-languages"><span>IT</span><span>EN</span><span>FR</span><span>DE</span><span>ES</span></div>
             <div className="preview-menu-row"><span>Tagliatelle al ragù</span><strong>€16</strong></div>
-            <div className="preview-menu-row"><span>Tortelloni burro e salvia</span><strong>€17</strong></div>
-            <p className="preview-footnote">Ingredienti, allergeni e disponibilità sempre a portata di tavolo.</p>
+            <p className="preview-footnote">5 lingue · allergeni chiari · QR sempre stabile</p>
           </div>
+          <span className="preview-orbit" aria-hidden="true">Apri · scegli · assaggia · </span>
         </div>
       </section>
+
+      <div className="landing-marquee" aria-hidden="true">
+        <div><span>Una tavola, cinque lingue</span><i>✦</i><span>Un QR che resta</span><i>✦</i><span>Piatti che si fanno vedere</span><i>✦</i><span>Una tavola, cinque lingue</span><i>✦</i><span>Un QR che resta</span><i>✦</i><span>Piatti che si fanno vedere</span><i>✦</i></div>
+      </div>
 
       <section className="landing-outcomes" aria-labelledby="outcomes-title">
         <div className="landing-outcomes-intro">
@@ -56,6 +63,32 @@ export default function HomePage() {
           <article><span>Per chi è in sala</span><h3>Le risposte ripetitive non interrompono più il servizio.</h3><p>Il personale resta presente dove conta: consiglio, cura e accoglienza.</p></article>
           <article><span>Per chi gestisce</span><h3>Una modifica sola, visibile subito e senza ristampare il QR.</h3><p>Prezzi e disponibilità cambiano in bozza, poi vanno online solo dopo conferma.</p></article>
         </div>
+      </section>
+
+      <section className="landing-taste" aria-labelledby="taste-title">
+        <header>
+          <p className="eyebrow">Il menu si mangia prima con gli occhi</p>
+          <h2 id="taste-title">Non un elenco.<br /><em>Un invito.</em></h2>
+          <p>Le immagini non riempiono spazio: danno ritmo alle categorie, raccontano la materia e aiutano l’ospite a decidere.</p>
+        </header>
+        <div className="taste-gallery">
+          <figure className="taste-card taste-card-wide">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/images/demo-osteria/crescentine.webp" alt="Crescentine con giardiniera e squacquerone" loading="lazy" />
+            <figcaption><span>Per cominciare</span><strong>Crescentine<br />e giardiniera</strong><i>12 €</i></figcaption>
+          </figure>
+          <figure className="taste-card taste-card-tall">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/images/demo-osteria/tortelloni.webp" alt="Tortelloni al burro e salvia" loading="lazy" />
+            <figcaption><span>La sfoglia</span><strong>Tortelloni,<br />burro e salvia</strong><i>17 €</i></figcaption>
+          </figure>
+          <figure className="taste-card taste-card-small">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/images/demo-osteria/zuppa-inglese.webp" alt="Zuppa inglese in coppa di vetro" loading="lazy" />
+            <figcaption><span>Per finire</span><strong>Zuppa inglese</strong><i>8 €</i></figcaption>
+          </figure>
+        </div>
+        <Link className="taste-link" href="/r/demo">Entra nel menu completo <span aria-hidden="true">↗</span></Link>
       </section>
 
       <section className="landing-process" id="come-funziona">

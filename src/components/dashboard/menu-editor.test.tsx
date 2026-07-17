@@ -16,6 +16,10 @@ vi.mock("@/app/dashboard/actions", () => ({
   uploadMenuItemMedia: "/item/media/upload",
 }));
 
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ refresh: vi.fn() }),
+}));
+
 describe("MenuEditor", () => {
   it("exposes complete, explicit draft structure controls", () => {
     const html = renderToStaticMarkup(
@@ -41,5 +45,7 @@ describe("MenuEditor", () => {
     expect(html).toContain("Questa categoria è vuota");
     expect(html).toContain("Foto del piatto");
     expect(html).toContain("Invia per la revisione");
+    expect(html).toContain("Studio immagini AI");
+    expect(html).toContain("Genera 1 immagine mancante");
   });
 });
