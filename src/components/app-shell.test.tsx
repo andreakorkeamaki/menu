@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { AppShell } from "./app-shell";
 
 vi.mock("@/app/login/actions", () => ({ signOut: "/login" }));
+vi.mock("next/navigation", () => ({ usePathname: () => "/dashboard" }));
 
 describe("AppShell", () => {
   it("keeps sign-out available in the mobile navigation", () => {
@@ -21,5 +22,6 @@ describe("AppShell", () => {
 
     expect(html).toContain('class="mobile-signout"');
     expect(html).toContain(">Esci</button>");
+    expect(html).toContain('aria-current="page"');
   });
 });

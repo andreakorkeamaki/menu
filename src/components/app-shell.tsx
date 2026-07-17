@@ -5,6 +5,7 @@ import type { Membership } from "@/types/domain";
 import { signOut } from "@/app/login/actions";
 import { switchOrganization } from "@/app/dashboard/workspace-actions";
 import { WorkspaceDraftGuard } from "@/components/workspace-draft-guard";
+import { AppShellNav } from "@/components/app-shell-nav";
 
 type ShellArea = "dashboard" | "ops";
 
@@ -42,8 +43,9 @@ export function AppShell({ children, context, area, activeMembership }: { childr
             ) : <strong>{activeMembership.organization?.name ?? "Ristorante"}</strong>}
           </div>
         ) : null}
+        <p className="sidebar-nav-label">{area === "ops" ? "Operazioni" : "Il tuo spazio"}</p>
         <nav aria-label={area === "ops" ? "Pannello operativo" : "Dashboard ristorante"}>
-          {links.map(([href, label]) => <Link href={href} key={href}>{label}</Link>)}
+          <AppShellNav links={links} />
         </nav>
         {context.isOperator && (area === "dashboard" || context.memberships.length > 0) && (
           <Link className="mode-switch" href={area === "ops" ? "/dashboard" : "/ops"}>
@@ -65,7 +67,7 @@ export function AppShell({ children, context, area, activeMembership }: { childr
             </form>
           ) : null}
           <nav aria-label={area === "ops" ? "Navigazione operatore mobile" : "Navigazione ristorante mobile"}>
-            {links.map(([href, label]) => <Link href={href} key={href}>{label}</Link>)}
+            <AppShellNav links={links} />
             {context.isOperator && (area === "dashboard" || context.memberships.length > 0) && (
               <Link className="mobile-mode-switch" href={area === "ops" ? "/dashboard" : "/ops"}>
                 {area === "ops" ? "Ristorante" : "Operatore"}

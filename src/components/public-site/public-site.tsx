@@ -110,7 +110,10 @@ export function PublicSite({ snapshot, locale, preview }: PublicSiteProps) {
             <img className="public-hero-image" src={location.cover_url} alt="" fetchPriority="high" />
           ) : (
             <div className="public-hero-art" aria-hidden="true">
-              <span>MI</span>
+              <div className="public-art-plate">
+                <span>{location.name.slice(0, 1)}</span>
+              </div>
+              <p>{location.city}</p>
             </div>
           )}
           <div className="public-hero-copy">
