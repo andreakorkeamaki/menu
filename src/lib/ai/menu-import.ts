@@ -50,6 +50,7 @@ export interface CreateMenuImportJobInput {
   fileId: string;
   filename?: string;
   sourceKind?: OpenAISourceKind;
+  attempts?: number;
   openai?: OpenAI;
   admin?: SupabaseClient;
 }
@@ -69,6 +70,7 @@ export async function createMenuImportBackgroundJob({
   fileId,
   filename,
   sourceKind = "document",
+  attempts = 1,
   openai = createOpenAIClient(),
   admin = createAdminClient(),
 }: CreateMenuImportJobInput) {
@@ -116,9 +118,11 @@ export async function createMenuImportBackgroundJob({
   }
 
   const job = {
+    model: settings.model,
+    prompt_version: MENU_IMPORT_PROMPT_VERSION,
     response_id: response.id,
     status: mapInitialStatus(response.status),
-    attempts: 1,
+    attempts,
     usage: response.usage ?? null,
     error: response.error ? { message: response.error.message } : null,
     started_at: new Date().toISOString(),

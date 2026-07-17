@@ -16,6 +16,11 @@ export interface ResponseWebhookEvent {
   created_at: number;
 }
 
+export interface ProviderSourceReference {
+  jobId: string;
+  fileId: string;
+}
+
 export interface WebhookRepository {
   claim(input: {
     webhookId: string;
@@ -23,6 +28,7 @@ export interface WebhookRepository {
     responseId: string | null;
     payload: unknown;
   }): Promise<"claimed" | "retry" | "duplicate">;
+  sourceFile(responseId: string): Promise<ProviderSourceReference | null>;
   updateJob(
     responseId: string,
     update: {
@@ -33,6 +39,7 @@ export interface WebhookRepository {
       completed_at: string | null;
     },
   ): Promise<void>;
+  markSourceFileReleased(source: ProviderSourceReference): Promise<void>;
   complete(webhookId: string): Promise<void>;
   fail(webhookId: string, message: string): Promise<void>;
 }
@@ -90,6 +97,23 @@ export function createSupabaseWebhookRepository(
       return "retry";
     },
 
+    async sourceFile(responseId) {
+      const { data, error } = await admin
+        .from("ai_jobs")
+        .select("id,input")
+        .eq("response_id", responseId)
+        .eq("kind", "menu_import")
+        .maybeSingle();
+      if (error) throw new Error(`Ricerca fonte AI non riuscita: ${error.message}`);
+      if (!data?.input || typeof data.input !== "object") return null;
+      const fileId = "openai_file_id" in data.input
+        ? (data.input as { openai_file_id?: unknown }).openai_file_id
+        : null;
+      return typeof fileId === "string" && fileId
+        ? { jobId: data.id as string, fileId }
+        : null;
+    },
+
     async updateJob(responseId, update) {
       if (update.status === "review" && update.output) {
         const { data: job, error: jobError } = await admin
@@ -119,6 +143,14 @@ export function createSupabaseWebhookRepository(
       if (!data?.length) {
         throw new Error(`Nessun ai_job trovato per la risposta ${responseId}.`);
       }
+    },
+
+    async markSourceFileReleased(source) {
+      const { error } = await admin.rpc("mark_ai_source_file_released", {
+        p_job_id: source.jobId,
+        p_file_id: source.fileId,
+      });
+      if (error) throw new Error(`Registrazione rilascio fonte AI non riuscita: ${error.message}`);
     },
 
     async complete(webhookId) {
@@ -154,6 +186,31 @@ function jobStatus(responseStatus?: string) {
   return "failed";
 }
 
+function isMissingProviderFile(error: unknown) {
+  return Boolean(
+    error
+      && typeof error === "object"
+      && "status" in error
+      && (error as { status?: unknown }).status === 404,
+  );
+}
+
+async function releaseProviderSource(
+  source: ProviderSourceReference,
+  openai: OpenAI,
+  repository: WebhookRepository,
+) {
+  try {
+    await openai.files.delete(source.fileId);
+  } catch (error) {
+    // A provider-side expiry or a previous delivery may already have removed it.
+    if (!isMissingProviderFile(error)) {
+      throw new Error("Rimozione della copia temporanea OpenAI non riuscita.");
+    }
+  }
+  await repository.markSourceFileReleased(source);
+}
+
 export async function processResponseWebhook(input: {
   webhookId: string;
   event: ResponseWebhookEvent;
@@ -171,9 +228,10 @@ export async function processResponseWebhook(input: {
   if (claim === "duplicate") return { duplicate: true as const };
 
   try {
-    const response = await openai.responses.retrieve(event.data.id, {
-      stream: false,
-    });
+    const [response, sourceFile] = await Promise.all([
+      openai.responses.retrieve(event.data.id, { stream: false }),
+      repository.sourceFile(event.data.id),
+    ]);
     let output: unknown = null;
     let errorMessage = responseError(response);
     let status = jobStatus(response.status);
@@ -202,6 +260,7 @@ export async function processResponseWebhook(input: {
           ? new Date().toISOString()
           : null,
     });
+    if (sourceFile) await releaseProviderSource(sourceFile, openai, repository);
     await repository.complete(webhookId);
     return { duplicate: false as const, status };
   } catch (error) {

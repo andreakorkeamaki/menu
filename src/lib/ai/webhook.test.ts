@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   createSupabaseWebhookRepository,
   processResponseWebhook,
+  type ProviderSourceReference,
   type ResponseWebhookEvent,
   type WebhookRepository,
 } from "@/lib/ai/webhook";
@@ -20,7 +21,9 @@ const staging = {
 function repository(claim: "claimed" | "retry" | "duplicate" = "claimed") {
   return {
     claim: vi.fn(async () => claim),
+    sourceFile: vi.fn<() => Promise<ProviderSourceReference | null>>(async () => null),
     updateJob: vi.fn(async () => undefined),
+    markSourceFileReleased: vi.fn(async () => undefined),
     complete: vi.fn(async () => undefined),
     fail: vi.fn(async () => undefined),
   } satisfies WebhookRepository;
@@ -140,5 +143,103 @@ describe("processResponseWebhook", () => {
         error: { message: expect.stringContaining("Output OpenAI non valido") },
       }),
     );
+  });
+
+  it("deletes the temporary provider source and records its release", async () => {
+    const repo = repository();
+    repo.sourceFile.mockResolvedValue({ jobId: "job-1", fileId: "file-private-menu" });
+    const remove = vi.fn(async () => ({ deleted: true }));
+    const openai = {
+      responses: {
+        retrieve: vi.fn(async () => ({
+          id: "resp_1",
+          status: "completed",
+          output_text: JSON.stringify(staging),
+          error: null,
+          incomplete_details: null,
+          usage: null,
+        })),
+      },
+      files: { delete: remove },
+    } as unknown as OpenAI;
+
+    await processResponseWebhook({
+      webhookId: "wh_source_release",
+      event,
+      rawPayload: event,
+      openai,
+      repository: repo,
+    });
+
+    expect(remove).toHaveBeenCalledWith("file-private-menu");
+    expect(repo.markSourceFileReleased).toHaveBeenCalledWith({
+      jobId: "job-1",
+      fileId: "file-private-menu",
+    });
+    expect(repo.markSourceFileReleased.mock.invocationCallOrder[0]).toBeLessThan(
+      repo.complete.mock.invocationCallOrder[0],
+    );
+  });
+
+  it("retries the webhook when provider source deletion genuinely fails", async () => {
+    const repo = repository();
+    repo.sourceFile.mockResolvedValue({ jobId: "job-1", fileId: "file-private-menu" });
+    const openai = {
+      responses: {
+        retrieve: vi.fn(async () => ({
+          id: "resp_1",
+          status: "completed",
+          output_text: JSON.stringify(staging),
+          error: null,
+          incomplete_details: null,
+          usage: null,
+        })),
+      },
+      files: { delete: vi.fn(async () => { throw { status: 503 }; }) },
+    } as unknown as OpenAI;
+
+    await expect(processResponseWebhook({
+      webhookId: "wh_source_failure",
+      event,
+      rawPayload: event,
+      openai,
+      repository: repo,
+    })).rejects.toThrow("Rimozione della copia temporanea OpenAI non riuscita");
+    expect(repo.fail).toHaveBeenCalledWith(
+      "wh_source_failure",
+      "Rimozione della copia temporanea OpenAI non riuscita.",
+    );
+    expect(repo.complete).not.toHaveBeenCalled();
+  });
+
+  it("treats an already missing provider source as successfully released", async () => {
+    const repo = repository();
+    repo.sourceFile.mockResolvedValue({ jobId: "job-1", fileId: "file-already-gone" });
+    const openai = {
+      responses: {
+        retrieve: vi.fn(async () => ({
+          id: "resp_1",
+          status: "completed",
+          output_text: JSON.stringify(staging),
+          error: null,
+          incomplete_details: null,
+          usage: null,
+        })),
+      },
+      files: { delete: vi.fn(async () => { throw { status: 404 }; }) },
+    } as unknown as OpenAI;
+
+    await expect(processResponseWebhook({
+      webhookId: "wh_source_missing",
+      event,
+      rawPayload: event,
+      openai,
+      repository: repo,
+    })).resolves.toEqual({ duplicate: false, status: "review" });
+    expect(repo.markSourceFileReleased).toHaveBeenCalledWith({
+      jobId: "job-1",
+      fileId: "file-already-gone",
+    });
+    expect(repo.complete).toHaveBeenCalledWith("wh_source_missing");
   });
 });

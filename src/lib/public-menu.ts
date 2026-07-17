@@ -1,7 +1,9 @@
 import { z } from "zod";
 import { cache } from "react";
+import { unstable_cache } from "next/cache";
 import { DEMO_SNAPSHOT } from "@/lib/demo-data";
-import { createClient } from "@/lib/supabase/server";
+import { createPublicClient } from "@/lib/supabase/public";
+import { reportServerError } from "@/lib/server-telemetry";
 import type { PublicMenuSnapshot } from "@/types/domain";
 
 const localizedTextSchema = z.object({
@@ -86,7 +88,7 @@ const snapshotSchema = z.object({
   version: z.number().int().positive(),
 });
 
-function parseSnapshot(value: unknown): PublicMenuSnapshot | null {
+export function parsePublicMenuSnapshot(value: unknown): PublicMenuSnapshot | null {
   const parsed = snapshotSchema.safeParse(value);
   return parsed.success ? parsed.data : null;
 }
@@ -95,20 +97,41 @@ function parseSnapshot(value: unknown): PublicMenuSnapshot | null {
  * Loads only the immutable current publication. Draft tables are deliberately
  * not part of the public read path.
  */
-async function loadPublishedMenu(locationSlug: string): Promise<PublicMenuSnapshot | null> {
-  const supabase = await createClient();
+const loadPublishedMenuFromDatabase = unstable_cache(
+  async (locationSlug: string): Promise<PublicMenuSnapshot | null> => {
+    const supabase = createPublicClient();
+    if (!supabase) return null;
 
-  if (supabase) {
-    const { data: publications } = await supabase
+    const { data: publications, error } = await supabase
       .from("menu_publications")
       .select("snapshot")
       .eq("location_slug", locationSlug)
       .eq("is_current", true)
       .limit(1);
+    if (error) {
+      const reference = reportServerError("public_menu_load_failed", error);
+      throw new Error(`Public menu data unavailable. Reference ${reference}.`);
+    }
 
-    const snapshot = parseSnapshot(publications?.[0]?.snapshot);
-    if (snapshot && snapshot.location.slug === locationSlug) return snapshot;
-  }
+    const rawSnapshot = publications?.[0]?.snapshot;
+    const snapshot = parsePublicMenuSnapshot(rawSnapshot);
+    if (rawSnapshot && (!snapshot || snapshot.location.slug !== locationSlug)) {
+      const reference = reportServerError(
+        "public_menu_snapshot_invalid",
+        new Error("Current publication snapshot is invalid or has a mismatched slug."),
+      );
+      throw new Error(`Public menu data unavailable. Reference ${reference}.`);
+    }
+    if (snapshot) return snapshot;
+    return null;
+  },
+  ["current-public-menu-publication"],
+  { revalidate: 3600, tags: ["public-menus"] },
+);
+
+async function loadPublishedMenu(locationSlug: string): Promise<PublicMenuSnapshot | null> {
+  const snapshot = await loadPublishedMenuFromDatabase(locationSlug);
+  if (snapshot) return snapshot;
 
   return locationSlug === DEMO_SNAPSHOT.location.slug ? DEMO_SNAPSHOT : null;
 }
@@ -120,15 +143,19 @@ export const getPublishedMenu = cache(loadPublishedMenu);
 /** Resolve a stable QR code on every visit, so changing the destination does not require reprinting. */
 export async function getQrDestinationPath(shortCode: string): Promise<string | null> {
   const normalizedCode = shortCode.trim().toUpperCase();
-  const supabase = await createClient();
+  const supabase = createPublicClient();
 
   if (supabase) {
-    const { data: codes } = await supabase
+    const { data: codes, error } = await supabase
       .from("qr_codes")
       .select("destination_path")
       .eq("short_code", normalizedCode)
       .eq("is_active", true)
       .limit(1);
+    if (error) {
+      const reference = reportServerError("public_qr_resolution_failed", error);
+      throw new Error(`QR destination unavailable. Reference ${reference}.`);
+    }
 
     const destinationPath = codes?.[0]?.destination_path;
     // QR destinations are deliberately limited to this application's public restaurant routes.

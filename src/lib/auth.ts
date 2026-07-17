@@ -1,7 +1,11 @@
 import { redirect } from "next/navigation";
+import { cookies } from "next/headers";
+import { cache } from "react";
 import { ensureAllowlistedOperator } from "@/lib/operator-access";
+import { ACTIVE_ORGANIZATION_COOKIE, selectMembership } from "@/lib/membership-selection";
 import { createClient } from "@/lib/supabase/server";
 import type { Membership, Profile } from "@/types/domain";
+import { requireSuccessfulQueries } from "@/lib/supabase/query-health";
 
 export interface UserContext {
   profile: Profile;
@@ -9,7 +13,7 @@ export interface UserContext {
   isOperator: boolean;
 }
 
-export async function getUserContext(): Promise<UserContext | null> {
+async function loadUserContext(): Promise<UserContext | null> {
   const supabase = await createClient();
   if (!supabase) return null;
   const { data: authData } = await supabase.auth.getUser();
@@ -25,6 +29,10 @@ export async function getUserContext(): Promise<UserContext | null> {
       .eq("user_id", authData.user.id),
     supabase.from("platform_staff").select("user_id").eq("user_id", authData.user.id).eq("active", true).maybeSingle(),
   ]);
+  requireSuccessfulQueries(
+    "authenticated_context_load_failed",
+    profileResult, membershipResult, operatorResult,
+  );
 
   const profile = (profileResult.data ?? {
     id: authData.user.id,
@@ -37,6 +45,10 @@ export async function getUserContext(): Promise<UserContext | null> {
   };
 }
 
+// Layouts and their pages both enforce access. React's request-scoped cache keeps
+// that defense in depth without repeating Auth plus three authorization reads.
+export const getUserContext = cache(loadUserContext);
+
 export async function requireUserContext() {
   const context = await getUserContext();
   if (!context) redirect("/login");
@@ -45,7 +57,11 @@ export async function requireUserContext() {
 
 export async function requireMembership() {
   const context = await requireUserContext();
-  const membership = context.memberships[0];
+  const cookieStore = await cookies();
+  const membership = selectMembership(
+    context.memberships,
+    cookieStore.get(ACTIVE_ORGANIZATION_COOKIE)?.value,
+  );
   if (!membership) redirect(context.isOperator ? "/ops" : "/login?error=no-membership");
   return { ...context, membership };
 }
