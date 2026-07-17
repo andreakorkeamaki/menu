@@ -1,5 +1,6 @@
 import {
   approveMenuImport,
+  retryMenuImport,
   saveMenuImportStaging,
   uploadIntakeMaterial,
 } from "@/app/ops/actions";
@@ -16,20 +17,44 @@ import {
 } from "@/lib/import/staging-review";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
+import { isImportStalled, MAX_IMPORT_ATTEMPTS } from "@/lib/import/recovery";
+import { requireSuccessfulQueries } from "@/lib/supabase/query-health";
+import { reportServerError } from "@/lib/server-telemetry";
+import { IMPORT_CASE_PAGE_SIZE, importWorkspaceHref, parseImportCasePage } from "@/lib/import-case-pagination";
+import Link from "next/link";
+import { redirect } from "next/navigation";
+import { z } from "zod";
 
 function relationName(value: { name?: string } | { name?: string }[] | null | undefined) {
-  return (Array.isArray(value) ? value[0]?.name : value?.name) ?? "Ristorante";
+  return (Array.isArray(value) ? value[0]?.name : value?.name) ?? "";
 }
 
 function formatJobError(value: unknown) {
   if (!value) return null;
-  if (typeof value === "string") return value;
+  if (typeof value === "string") return { message: value, reference: null };
   if (typeof value === "object" && "message" in value) {
     const message = (value as { message?: unknown }).message;
-    if (typeof message === "string") return message;
+    const reference = "reference" in value ? (value as { reference?: unknown }).reference : null;
+    if (typeof message === "string") return { message, reference: typeof reference === "string" ? reference : null };
   }
-  return "Errore non dettagliato";
+  return { message: "Errore non dettagliato", reference: null };
 }
+
+function jobSourceFilename(value: unknown) {
+  if (!value || typeof value !== "object" || !("filename" in value)) return "Documento importato";
+  const filename = (value as { filename?: unknown }).filename;
+  return typeof filename === "string" ? filename : "Documento importato";
+}
+
+const jobStatusLabel: Record<string, string> = {
+  pending: "In attesa",
+  queued: "In coda",
+  running: "In elaborazione",
+  review: "Da revisionare",
+  completed: "Completato",
+  failed: "Non riuscito",
+  cancelled: "Annullato",
+};
 
 function issueSummary(issues: ImportIssue[]) {
   const actionable = issues.filter(isActionableIssue);
@@ -52,12 +77,20 @@ const errorMessages: Record<string, string> = {
   "file-type": "Formato non supportato.",
   upload: "Il caricamento nell’area privata non è riuscito.",
   queue: "Non è stato possibile creare il job di importazione.",
-  processing: "L’elaborazione non è partita o non ha prodotto staging valido. Il file resta privato per il retry.",
+  processing: "L’elaborazione non è partita o non ha prodotto una bozza valida. Puoi riprovare usando il file privato già caricato.",
+  "retry-invalid": "La richiesta di nuovo tentativo non è valida.",
+  "retry-unavailable": "Questo job è già in elaborazione, contiene una revisione oppure ha raggiunto il limite di tentativi.",
+  "retry-missing": "Il job da riprovare non esiste più.",
+  "retry-claim": "Non è stato possibile riservare il job per un nuovo tentativo.",
+  "retry-source": "La fonte privata non può essere riutilizzata in sicurezza. Carica nuovamente il documento.",
+  "retry-processing": "Anche il nuovo tentativo non è riuscito. Il file resta privato e il riferimento tecnico è disponibile qui sotto.",
   "invalid-json": "Il JSON corretto non è sintatticamente valido.",
   "invalid-staging-schema": "Lo staging non rispetta lo schema richiesto: controlla campi, null e tipi.",
   "save-staging": "La revisione non è stata salvata; potrebbe essere già approvata.",
   "review-required": "Completa le sole decisioni indicate (suggerimenti AI, prezzi o supplementi) prima dell’approvazione.",
   approval: "L’approvazione transazionale non è riuscita; la bozza non è stata modificata.",
+  "invalid-case": "Il collegamento al caso non è valido. Abbiamo aperto la coda disponibile.",
+  "case-missing": "Il caso richiesto non esiste più. Abbiamo aperto la coda disponibile.",
 };
 
 export default async function ImportPage({
@@ -73,23 +106,72 @@ export default async function ImportPage({
     qr?: string;
     saved?: string;
     approved?: string;
+    lead_converted?: string;
+    retried?: string;
+    reference?: string;
     error?: string;
+    page?: string;
   }>;
 }) {
   const params = await searchParams;
   await requireOperator();
+  const page = parseImportCasePage(params.page);
+  const requestedCaseId = params.case ? z.uuid().safeParse(params.case) : null;
   const supabase = await createClient();
-  const [{ data: cases }, { data: jobs }, { data: stages }] = await Promise.all([
-    supabase!.from("onboarding_cases").select("id,organization_id,status,contact_email,source_file_path,created_at,organization:organizations(name),location:locations(name)").order("created_at", { ascending: false }).limit(50),
-    supabase!.from("ai_jobs").select("id,onboarding_case_id,status,model,error,created_at,completed_at").eq("kind", "menu_import").order("created_at", { ascending: false }).limit(100),
-    supabase!.from("menu_import_staging").select("id,organization_id,onboarding_case_id,ai_job_id,source_bucket,source_path,source_filename,source_mime_type,parser,payload,status,revision,approval_summary,created_at,updated_at").order("created_at", { ascending: false }).limit(100),
+  const caseRangeStart = (page - 1) * IMPORT_CASE_PAGE_SIZE;
+  const [caseResult, requestedCaseResult] = await Promise.all([
+    supabase!.from("onboarding_cases")
+      .select("id,organization_id,status,contact_email,source_file_path,created_at,organization:organizations(name),location:locations(name)", { count: "exact" })
+      .order("created_at", { ascending: false })
+      .range(caseRangeStart, caseRangeStart + IMPORT_CASE_PAGE_SIZE - 1),
+    supabase!.from("onboarding_cases")
+      .select("id,organization_id,status,contact_email,source_file_path,created_at,organization:organizations(name),location:locations(name)")
+      .eq("id", requestedCaseId?.success ? requestedCaseId.data : "00000000-0000-0000-0000-000000000000")
+      .maybeSingle(),
   ]);
-  const selected = (cases ?? []).find((entry) => entry.id === params.case) ?? (cases ?? [])[0];
-  const caseStages = (stages ?? []).filter((entry) => entry.onboarding_case_id === selected?.id);
-  const caseJobs = (jobs ?? []).filter((job) => job.onboarding_case_id === selected?.id);
+  requireSuccessfulQueries(
+    "ops_import_workspace_load_failed",
+    caseResult, requestedCaseResult,
+  );
+  const cases = caseResult.data ?? [];
+  const caseTotal = caseResult.count ?? cases.length;
+  const caseTotalPages = Math.max(1, Math.ceil(caseTotal / IMPORT_CASE_PAGE_SIZE));
+  if (params.case && !requestedCaseId?.success) {
+    redirect(importWorkspaceHref({ page: Math.min(page, caseTotalPages), error: "invalid-case" }));
+  }
+  if (requestedCaseId?.success && !requestedCaseResult.data) {
+    redirect(importWorkspaceHref({ page: Math.min(page, caseTotalPages), error: "case-missing" }));
+  }
+  if (page > caseTotalPages) {
+    redirect(importWorkspaceHref({
+      page: caseTotalPages,
+      caseId: requestedCaseId?.success ? requestedCaseId.data : undefined,
+    }));
+  }
+  const selected = requestedCaseResult.data ?? cases[0];
+  const selectedCaseId = selected?.id ?? "00000000-0000-0000-0000-000000000000";
+  const [jobResult, stageResult] = await Promise.all([
+    supabase!.from("ai_jobs")
+      .select("id,onboarding_case_id,status,model,attempts,input,error,provider_file_released_at,created_at,updated_at,started_at,completed_at")
+      .eq("kind", "menu_import")
+      .eq("onboarding_case_id", selectedCaseId)
+      .order("created_at", { ascending: false }),
+    supabase!.from("menu_import_staging")
+      .select("id,organization_id,onboarding_case_id,ai_job_id,source_bucket,source_path,source_filename,source_mime_type,parser,payload,status,revision,approval_summary,created_at,updated_at")
+      .eq("onboarding_case_id", selectedCaseId)
+      .order("created_at", { ascending: false }),
+  ]);
+  requireSuccessfulQueries("ops_import_case_load_failed", jobResult, stageResult);
+  const caseStages = stageResult.data ?? [];
+  const caseJobs = jobResult.data ?? [];
+  const selectedOutsidePage = Boolean(selected && !cases.some((entry) => entry.id === selected.id));
+  const firstVisibleCase = cases.length ? caseRangeStart + 1 : 0;
+  const lastVisibleCase = cases.length ? caseRangeStart + cases.length : 0;
   const activeJobCount = caseJobs.filter((job) =>
     ["pending", "queued", "running"].includes(job.status),
   ).length;
+  const failedJobCount = caseJobs.filter((job) => ["failed", "cancelled"].includes(job.status)).length;
+  const stalledJobCount = caseJobs.filter((job) => isImportStalled(job.status, job.updated_at)).length;
   const selectedStage = caseStages.find((entry) => entry.id === params.stage) ?? caseStages[0];
   let parsedStaging: MenuImportStaging | null = null;
   if (selectedStage) {
@@ -102,10 +184,13 @@ export default async function ImportPage({
   const reviewSummary = parsedStaging ? getStagingReviewSummary(parsedStaging) : null;
   let sourceUrl: string | null = null;
   if (selectedStage) {
-    const { data } = await createAdminClient().storage
+    const { data, error } = await createAdminClient().storage
       .from(selectedStage.source_bucket)
       .createSignedUrl(selectedStage.source_path, 300);
     sourceUrl = data?.signedUrl ?? null;
+    if (error || !sourceUrl) {
+      reportServerError("ops_import_source_preview_load_failed", error ?? new Error("Signed import source missing"));
+    }
   }
 
   return (
@@ -128,23 +213,41 @@ export default async function ImportPage({
       {params.uploaded && <p className="form-success" role="status">Materiale caricato e avviato con un solo job {params.job ? <code>{params.job.slice(0, 8)}</code> : null}.</p>}
       {params.saved && <p className="form-success" role="status">Correzioni staging salvate e revisionate contro lo schema.</p>}
       {params.approved && <p className="form-success" role="status">Import approvato: la bozza normalizzata e le righe di traduzione sono state scritte in un’unica transazione. Nulla è stato pubblicato.</p>}
-      {params.error && <p className="form-error" role="alert">{errorMessages[params.error] ?? `Operazione non riuscita (${params.error}).`}</p>}
+      {params.lead_converted && <p className="form-success" role="status">Richiesta demo convertita: tenant e onboarding sono collegati. I dati del contatto non dovranno essere ricopiati.</p>}
+      {params.retried && <p className="form-success" role="status">Nuovo tentativo avviato dal file privato già caricato. Non è stato creato alcun job duplicato.</p>}
+      {params.error && <p className="form-error" role="alert">{errorMessages[params.error] ?? `Operazione non riuscita (${params.error}).`}{params.reference ? <small> Riferimento tecnico: <code>{params.reference}</code>.</small> : null}</p>}
 
       <div className="import-layout">
         <aside className="dashboard-panel case-list">
-          <div className="panel-heading"><div><p className="eyebrow">Casi</p><h2>Seleziona cliente</h2></div></div>
-          {(cases ?? []).map((entry) => (
-            <a className={entry.id === selected?.id ? "active" : ""} href={`/ops/import?case=${entry.id}`} key={entry.id}>
-              <strong>{relationName(entry.location) || relationName(entry.organization)}</strong>
+          <div className="panel-heading"><div><p className="eyebrow">Casi</p><h2>Seleziona cliente</h2><small>{cases.length ? `${firstVisibleCase}–${lastVisibleCase} di ${caseTotal}` : "Nessun caso disponibile"}</small></div><span className="count-badge">{caseTotal}</span></div>
+          {selectedOutsidePage && selected ? (
+            <div className="case-list-pinned">
+              <span>Caso aperto da collegamento diretto</span>
+              <Link className="active" href={importWorkspaceHref({ caseId: selected.id, page })}>
+                <strong>{relationName(selected.location) || relationName(selected.organization) || "Ristorante"}</strong>
+                <small>{selected.status}</small>
+              </Link>
+            </div>
+          ) : null}
+          {cases.map((entry) => (
+            <Link className={entry.id === selected?.id ? "active" : ""} href={importWorkspaceHref({ caseId: entry.id, page })} key={entry.id}>
+              <strong>{relationName(entry.location) || relationName(entry.organization) || "Ristorante"}</strong>
               <small>{entry.status}</small>
-            </a>
+            </Link>
           ))}
+          {caseTotalPages > 1 ? (
+            <nav className="case-list-pagination" aria-label="Pagine dei casi importazione">
+              {page > 1 ? <Link href={importWorkspaceHref({ page: page - 1 })}>← Più recenti</Link> : <span />}
+              <span>Pagina {page} di {caseTotalPages}</span>
+              {page < caseTotalPages ? <Link href={importWorkspaceHref({ page: page + 1 })}>Più vecchi →</Link> : <span />}
+            </nav>
+          ) : null}
         </aside>
 
         <section className="dashboard-panel import-workspace">
           {selected ? (
             <>
-              <div className="panel-heading"><div><p className="eyebrow">Materiali</p><h2>{relationName(selected.location) || relationName(selected.organization)}</h2></div></div>
+              <div className="panel-heading"><div><p className="eyebrow">Materiali</p><h2>{relationName(selected.location) || relationName(selected.organization) || "Ristorante"}</h2></div></div>
               <form action={uploadIntakeMaterial} className="upload-dropzone">
                 <input type="hidden" name="case_id" value={selected.id} />
                 <label>
@@ -156,21 +259,38 @@ export default async function ImportPage({
               </form>
 
               <AiJobMonitor activeJobs={activeJobCount} />
+              <section className={`import-reliability ${failedJobCount || stalledJobCount ? "has-attention" : "is-healthy"}`} aria-label="Affidabilità delle elaborazioni">
+                <span aria-hidden="true">{failedJobCount || stalledJobCount ? "!" : "✓"}</span>
+                <div><strong>{failedJobCount || stalledJobCount ? "Serve attenzione" : "Elaborazioni sotto controllo"}</strong><p>{stalledJobCount ? `${stalledJobCount} elaborazioni non si aggiornano da almeno 15 minuti. ` : ""}{failedJobCount ? `${failedJobCount} tentativi non riusciti possono essere recuperati qui sotto.` : "Nessun errore o job fermo per questo ristorante."}</p></div>
+              </section>
               <div className="job-list">
                 <h3>Elaborazioni</h3>
                 {caseJobs.map((job) => {
                   const jobError = formatJobError(job.error);
                   const stage = caseStages.find((entry) => entry.ai_job_id === job.id);
+                  const attempt = Math.max(1, job.attempts ?? 0);
+                  const stalled = isImportStalled(job.status, job.updated_at);
+                  const retryable = ["failed", "cancelled"].includes(job.status) && attempt < MAX_IMPORT_ATTEMPTS && !stage;
                   return (
-                    <article key={job.id}>
-                      <span className={`status-dot status-${job.status}`} />
-                      <div><strong>{job.model}</strong><small>{formatDateTime(job.created_at)}</small></div>
-                      <span className="status-pill">{job.status}</span>
-                      {stage && <a href={`/ops/import?case=${selected.id}&stage=${stage.id}`}>Revisiona →</a>}
-                      {jobError && <p>{jobError}</p>}
+                    <article className={`import-job-card ${stalled ? "is-stalled" : ""} ${job.status === "failed" ? "is-failed" : ""}`} key={job.id}>
+                      <span className={`status-dot status-${job.status}`} aria-hidden="true" />
+                      <div className="import-job-main">
+                        <strong>{jobSourceFilename(job.input)}</strong>
+                        <small>{job.model} · tentativo {attempt} di {MAX_IMPORT_ATTEMPTS} · aggiornato {formatDateTime(job.updated_at)}</small>
+                        {job.provider_file_released_at ? <span className="provider-release">✓ Copia temporanea OpenAI eliminata · {formatDateTime(job.provider_file_released_at)}</span> : null}
+                        {stalled ? <em>Lo stato non si aggiorna da almeno 15 minuti: verifica il webhook prima di avviare altro lavoro.</em> : null}
+                      </div>
+                      <span className={`status-pill status-${job.status}`}>{jobStatusLabel[job.status] ?? job.status}</span>
+                      <div className="import-job-actions">
+                        {stage && <a className="button button-light" href={`/ops/import?case=${selected.id}&stage=${stage.id}`}>Revisiona</a>}
+                        {retryable ? <form action={retryMenuImport}><input type="hidden" name="job_id" value={job.id} /><PendingSubmitButton className="button button-dark" pendingLabel="Avvio…">Riprova dal file salvato</PendingSubmitButton></form> : null}
+                        {["failed", "cancelled"].includes(job.status) && !retryable ? <small>{stage ? "La bozza esistente va revisionata." : "Limite raggiunto: carica una nuova fonte."}</small> : null}
+                      </div>
+                      {jobError && <p className="import-job-error"><strong>{jobError.message}</strong>{jobError.reference ? <span>Riferimento <code>{jobError.reference}</code></span> : null}</p>}
                     </article>
                   );
                 })}
+                {!caseJobs.length ? <div className="empty-job-list"><p>Nessuna elaborazione ancora avviata.</p><span>Carica il primo materiale: la fonte resterà privata fino alla revisione.</span></div> : null}
               </div>
             </>
           ) : <div className="empty-state"><h2>Nessun caso disponibile</h2><p>Crea prima un ristorante pilota.</p></div>}
@@ -265,7 +385,8 @@ export default async function ImportPage({
                   <input type="hidden" name="staging_id" value={selectedStage.id} />
                   <input type="hidden" name="organization_id" value={selectedStage.organization_id} />
                   <input type="hidden" name="case_id" value={selectedStage.onboarding_case_id} />
-                  <PendingSubmitButton className="button button-dark" pendingLabel="Scrittura nella bozza…" disabled={reviewSummary.requiredDecisions > 0}>Approva e scrivi nella bozza</PendingSubmitButton>
+                  <PendingSubmitButton className="button button-dark" pendingLabel="Scrittura nella bozza…" disabled={reviewSummary.requiredDecisions > 0 || !sourceUrl}>Approva e scrivi nella bozza</PendingSubmitButton>
+                  {!sourceUrl ? <small>La fonte privata deve essere apribile prima dell’approvazione.</small> : null}
                 </form>
               </div>
             </>

@@ -11,35 +11,87 @@ interface MenuBrowserProps {
   locale: Locale;
 }
 
+export type DietaryFilter = "vegetarian" | "vegan" | "gluten_free";
+
 function normalize(value: string) {
   return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase();
 }
 
+export function filterMenuCategories({
+  categories,
+  locale,
+  query,
+  dietaryFilter,
+  excludedAllergen,
+}: {
+  categories: PublicCategory[];
+  locale: Locale;
+  query: string;
+  dietaryFilter: DietaryFilter | null;
+  excludedAllergen: string;
+}) {
+  const needle = normalize(query.trim());
+  const normalizedExcludedAllergen = normalize(excludedAllergen);
+
+  return categories
+    .map((category) => ({
+      ...category,
+      items: category.items.filter((item) => {
+        const matchesQuery = !needle || normalize(
+          [
+            localized(item.name, locale),
+            localized(item.description, locale),
+            localized(item.ingredients, locale),
+            ...item.allergens.flatMap((allergen) => [allergen, localizeAllergen(allergen, locale)]),
+          ].join(" "),
+        ).includes(needle);
+        const matchesDiet = !dietaryFilter || item[dietaryFilter];
+        const avoidsAllergen = !normalizedExcludedAllergen || !item.allergens.some((allergen) =>
+          [allergen, localizeAllergen(allergen, locale)].some(
+            (label) => normalize(label) === normalizedExcludedAllergen,
+          ),
+        );
+
+        return matchesQuery && matchesDiet && avoidsAllergen;
+      }),
+    }))
+    .filter((category) => category.items.length > 0);
+}
+
 export function MenuBrowser({ categories, locale }: MenuBrowserProps) {
   const [query, setQuery] = useState("");
+  const [dietaryFilter, setDietaryFilter] = useState<DietaryFilter | null>(null);
+  const [excludedAllergen, setExcludedAllergen] = useState("");
   const deferredQuery = useDeferredValue(query);
   const copy = PUBLIC_COPY[locale];
 
-  const visibleCategories = useMemo(() => {
-    const needle = normalize(deferredQuery.trim());
-    if (!needle) return categories;
+  const allergens = useMemo(() => Array.from(new Set(
+    categories.flatMap((category) => category.items.flatMap((item) => item.allergens)),
+  )).sort((left, right) => localizeAllergen(left, locale).localeCompare(localizeAllergen(right, locale), locale)), [categories, locale]);
 
-    return categories
-      .map((category) => ({
-        ...category,
-        items: category.items.filter((item) =>
-          normalize(
-            [
-              localized(item.name, locale),
-              localized(item.description, locale),
-              localized(item.ingredients, locale),
-              ...item.allergens.flatMap((allergen) => [allergen, localizeAllergen(allergen, locale)]),
-            ].join(" "),
-          ).includes(needle),
-        ),
-      }))
-      .filter((category) => category.items.length > 0);
-  }, [categories, deferredQuery, locale]);
+  const visibleCategories = useMemo(() => {
+    return filterMenuCategories({
+      categories,
+      locale,
+      query: deferredQuery,
+      dietaryFilter,
+      excludedAllergen,
+    });
+  }, [categories, deferredQuery, dietaryFilter, excludedAllergen, locale]);
+
+  const visibleItemCount = visibleCategories.reduce((total, category) => total + category.items.length, 0);
+  const hasActiveFilters = Boolean(query || dietaryFilter || excludedAllergen);
+  const dietaryOptions: Array<{ value: DietaryFilter; label: string }> = [
+    { value: "vegetarian", label: copy.vegetarian },
+    { value: "vegan", label: copy.vegan },
+    { value: "gluten_free", label: copy.glutenFree },
+  ];
+
+  function clearFilters() {
+    setQuery("");
+    setDietaryFilter(null);
+    setExcludedAllergen("");
+  }
 
   return (
     <div className="public-menu-browser">
@@ -58,7 +110,46 @@ export function MenuBrowser({ categories, locale }: MenuBrowserProps) {
         </div>
       </div>
 
-      {!deferredQuery && categories.length > 1 ? (
+      <div className="public-filter-panel">
+        <fieldset className="public-dietary-filters">
+          <legend>{copy.filtersLabel}</legend>
+          <div>
+            <button type="button" aria-pressed={dietaryFilter === null} onClick={() => setDietaryFilter(null)}>
+              {copy.allDishes}
+            </button>
+            {dietaryOptions.map((option) => (
+              <button
+                type="button"
+                aria-pressed={dietaryFilter === option.value}
+                key={option.value}
+                onClick={() => setDietaryFilter((current) => current === option.value ? null : option.value)}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+        </fieldset>
+
+        {allergens.length > 0 ? (
+          <label className="public-allergen-filter">
+            <span>{copy.avoidAllergen}</span>
+            <select value={excludedAllergen} onChange={(event) => setExcludedAllergen(event.target.value)}>
+              <option value="">{copy.noAllergenExcluded}</option>
+              {allergens.map((allergen) => (
+                <option value={allergen} key={allergen}>{localizeAllergen(allergen, locale)}</option>
+              ))}
+            </select>
+          </label>
+        ) : null}
+
+        <div className="public-filter-status">
+          <p aria-live="polite">{visibleItemCount} {visibleItemCount === 1 ? copy.resultSingular : copy.resultPlural}</p>
+          {hasActiveFilters ? <button type="button" onClick={clearFilters}>{copy.clearFilters}</button> : null}
+        </div>
+        <p className="public-dietary-note">{copy.dietarySafety}</p>
+      </div>
+
+      {!hasActiveFilters && categories.length > 1 ? (
         <nav className="public-category-nav" aria-label={copy.navMenu}>
           {categories.map((category) => (
             <a key={category.id} href={`#category-${category.slug}`}>
@@ -68,7 +159,7 @@ export function MenuBrowser({ categories, locale }: MenuBrowserProps) {
         </nav>
       ) : null}
 
-      <div className="public-categories" aria-live="polite">
+      <div className="public-categories">
         {visibleCategories.length === 0 ? (
           <p className="public-empty">{copy.noResults}</p>
         ) : (
@@ -88,7 +179,7 @@ export function MenuBrowser({ categories, locale }: MenuBrowserProps) {
                     {item.image_url ? (
                       // Snapshot media URLs are approved public assets. Native img avoids external-host config coupling.
                       // eslint-disable-next-line @next/next/no-img-element
-                      <img src={item.image_url} alt="" loading="lazy" />
+                      <img src={item.image_url} alt="" width={1200} height={900} loading="lazy" decoding="async" />
                     ) : null}
                     <div className="public-item-content">
                       <div className="public-item-title">

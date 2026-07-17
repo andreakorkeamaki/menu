@@ -4,6 +4,6 @@ import { getSupabaseSecretEnv } from "@/lib/supabase/config";
 export function createAdminClient() {
   const { url, key } = getSupabaseSecretEnv();
   return createSupabaseClient(url, key, {
-    auth: { autoRefreshToken: false, persistSession: false },
+    auth: { autoRefreshToken: false, persistSession: false, detectSessionInUrl: false },
   });
 }

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Brand } from "@/components/brand";
 
-const demoRequestHref = "mailto:ciao@menuinterattivo.it?subject=Richiesta%20demo%20MenuInterattivo";
+const demoRequestHref = "/richiedi-demo";
 
 export default function HomePage() {
   return (
@@ -10,7 +10,7 @@ export default function HomePage() {
         <Brand />
         <div className="landing-nav-actions">
           <Link href="/r/demo">Apri la demo</Link>
-          <a className="button button-dark" href={demoRequestHref}>Richiedi una demo</a>
+          <Link className="button button-dark" href={demoRequestHref}>Richiedi una demo</Link>
           <Link href="/login">Accedi</Link>
         </div>
       </nav>
@@ -23,7 +23,7 @@ export default function HomePage() {
             Trasformiamo il materiale che hai già in un’esperienza mobile curata, sempre aggiornata e pronta da aprire con un solo QR.
           </p>
           <div className="hero-actions">
-            <a className="button button-accent" href={demoRequestHref}>Richiedi una demo</a>
+            <Link className="button button-accent" href={demoRequestHref}>Richiedi una demo</Link>
             <Link className="text-link" href="/r/demo">Esplora il menu <span aria-hidden="true">↗</span></Link>
           </div>
           <dl className="hero-facts">
@@ -65,7 +65,7 @@ export default function HomePage() {
             facile da aggiornare e pronta per il tuo QR.
           </p>
           <div className="landing-cta-actions">
-            <a className="button button-accent" href={demoRequestHref}>Richiedi una demo</a>
+            <Link className="button button-accent" href={demoRequestHref}>Richiedi una demo</Link>
             <a className="landing-email-link" href="mailto:ciao@menuinterattivo.it">ciao@menuinterattivo.it</a>
           </div>
           <small>Onboarding assistito · Nessun nuovo gestionale da imparare · Revisione umana inclusa</small>

@@ -4,12 +4,21 @@ export const PUBLIC_COPY: Record<
   Locale,
   {
     mainNavigation: string;
+    mobileNavigation: string;
     navMenu: string;
     navInfo: string;
     reserve: string;
     menuEyebrow: string;
     searchLabel: string;
     searchPlaceholder: string;
+    filtersLabel: string;
+    allDishes: string;
+    avoidAllergen: string;
+    noAllergenExcluded: string;
+    clearFilters: string;
+    resultSingular: string;
+    resultPlural: string;
+    dietarySafety: string;
     noResults: string;
     unavailable: string;
     vegetarian: string;
@@ -29,12 +38,21 @@ export const PUBLIC_COPY: Record<
 > = {
   it: {
     mainNavigation: "Navigazione principale",
+    mobileNavigation: "Azioni rapide",
     navMenu: "Menu",
     navInfo: "Informazioni",
     reserve: "Prenota",
     menuEyebrow: "Il nostro menu",
     searchLabel: "Cerca nel menu",
     searchPlaceholder: "Cerca un piatto o un ingrediente…",
+    filtersLabel: "Esigenze alimentari",
+    allDishes: "Tutti i piatti",
+    avoidAllergen: "Escludi un allergene dichiarato",
+    noAllergenExcluded: "Nessun allergene escluso",
+    clearFilters: "Azzera filtri",
+    resultSingular: "piatto trovato",
+    resultPlural: "piatti trovati",
+    dietarySafety: "I filtri considerano gli ingredienti dichiarati. In caso di allergie o rischio di contaminazione, chiedi sempre conferma al personale.",
     noResults: "Nessun piatto corrisponde alla ricerca.",
     unavailable: "Non disponibile",
     vegetarian: "Vegetariano",
@@ -53,12 +71,21 @@ export const PUBLIC_COPY: Record<
   },
   en: {
     mainNavigation: "Main navigation",
+    mobileNavigation: "Quick actions",
     navMenu: "Menu",
     navInfo: "Information",
     reserve: "Book a table",
     menuEyebrow: "Our menu",
     searchLabel: "Search the menu",
     searchPlaceholder: "Search for a dish or ingredient…",
+    filtersLabel: "Dietary needs",
+    allDishes: "All dishes",
+    avoidAllergen: "Exclude a declared allergen",
+    noAllergenExcluded: "No allergen excluded",
+    clearFilters: "Clear filters",
+    resultSingular: "dish found",
+    resultPlural: "dishes found",
+    dietarySafety: "Filters use declared ingredients. If you have an allergy or are concerned about cross-contact, always confirm with the staff.",
     noResults: "No dishes match your search.",
     unavailable: "Unavailable",
     vegetarian: "Vegetarian",
@@ -77,12 +104,21 @@ export const PUBLIC_COPY: Record<
   },
   fr: {
     mainNavigation: "Navigation principale",
+    mobileNavigation: "Actions rapides",
     navMenu: "Menu",
     navInfo: "Informations",
     reserve: "Réserver",
     menuEyebrow: "Notre menu",
     searchLabel: "Rechercher dans le menu",
     searchPlaceholder: "Rechercher un plat ou un ingrédient…",
+    filtersLabel: "Besoins alimentaires",
+    allDishes: "Tous les plats",
+    avoidAllergen: "Exclure un allergène déclaré",
+    noAllergenExcluded: "Aucun allergène exclu",
+    clearFilters: "Effacer les filtres",
+    resultSingular: "plat trouvé",
+    resultPlural: "plats trouvés",
+    dietarySafety: "Les filtres utilisent les ingrédients déclarés. En cas d’allergie ou de risque de contamination croisée, demandez toujours confirmation au personnel.",
     noResults: "Aucun plat ne correspond à votre recherche.",
     unavailable: "Indisponible",
     vegetarian: "Végétarien",
@@ -101,12 +137,21 @@ export const PUBLIC_COPY: Record<
   },
   de: {
     mainNavigation: "Hauptnavigation",
+    mobileNavigation: "Schnellaktionen",
     navMenu: "Speisekarte",
     navInfo: "Informationen",
     reserve: "Tisch reservieren",
     menuEyebrow: "Unsere Speisekarte",
     searchLabel: "Speisekarte durchsuchen",
     searchPlaceholder: "Gericht oder Zutat suchen…",
+    filtersLabel: "Ernährungswünsche",
+    allDishes: "Alle Gerichte",
+    avoidAllergen: "Deklariertes Allergen ausschließen",
+    noAllergenExcluded: "Kein Allergen ausgeschlossen",
+    clearFilters: "Filter zurücksetzen",
+    resultSingular: "Gericht gefunden",
+    resultPlural: "Gerichte gefunden",
+    dietarySafety: "Die Filter berücksichtigen deklarierte Zutaten. Bei Allergien oder möglicher Kreuzkontamination fragen Sie bitte immer das Personal.",
     noResults: "Keine passenden Gerichte gefunden.",
     unavailable: "Nicht verfügbar",
     vegetarian: "Vegetarisch",
@@ -125,12 +170,21 @@ export const PUBLIC_COPY: Record<
   },
   es: {
     mainNavigation: "Navegación principal",
+    mobileNavigation: "Acciones rápidas",
     navMenu: "Menú",
     navInfo: "Información",
     reserve: "Reservar",
     menuEyebrow: "Nuestro menú",
     searchLabel: "Buscar en el menú",
     searchPlaceholder: "Busca un plato o ingrediente…",
+    filtersLabel: "Necesidades alimentarias",
+    allDishes: "Todos los platos",
+    avoidAllergen: "Excluir un alérgeno declarado",
+    noAllergenExcluded: "Ningún alérgeno excluido",
+    clearFilters: "Borrar filtros",
+    resultSingular: "plato encontrado",
+    resultPlural: "platos encontrados",
+    dietarySafety: "Los filtros usan los ingredientes declarados. Si tienes una alergia o te preocupa la contaminación cruzada, confírmalo siempre con el personal.",
     noResults: "No hay platos que coincidan con la búsqueda.",
     unavailable: "No disponible",
     vegetarian: "Vegetariano",

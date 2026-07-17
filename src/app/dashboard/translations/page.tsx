@@ -13,7 +13,11 @@ import {
 import { requireMembership } from "@/lib/auth";
 import { LOCALE_LABELS } from "@/lib/constants";
 import { createClient } from "@/lib/supabase/server";
+import { failProtectedQuery, requireSuccessfulQueries } from "@/lib/supabase/query-health";
+import { parseTranslationListParams, translationListHref } from "@/lib/translation-list";
 import type { Locale, TranslationRow } from "@/types/domain";
+import Link from "next/link";
+import { redirect } from "next/navigation";
 
 const statusLabel = {
   missing: "Mancante",
@@ -33,17 +37,52 @@ export default async function TranslationsPage({
     reviewed?: string;
     approved_all?: string;
     translation_error?: string;
+    locale?: string;
+    status?: string;
+    page?: string;
   }>;
 }) {
   const params = await searchParams;
+  const filters = parseTranslationListParams(params);
+  const pageSize = 100;
+  const rangeStart = (filters.page - 1) * pageSize;
   const { membership } = await requireMembership();
   const supabase = await createClient();
-  const [{ data }, { count: eligibleCount }, { count: readyDraftCount }] = await Promise.all([
-    supabase!.from("translations").select("*").eq("organization_id", membership.organization_id).order("locale").order("status").limit(500),
-    supabase!.from("translations").select("id", { count: "exact", head: true }).eq("organization_id", membership.organization_id).in("status", ["missing", "stale", "error"]).eq("origin", "machine"),
-    supabase!.from("translations").select("id", { count: "exact", head: true }).eq("organization_id", membership.organization_id).eq("status", "machine_draft").not("translated_text", "is", null),
+  let translationQuery = supabase!.from("translations")
+    .select("*", { count: "exact" })
+    .eq("organization_id", membership.organization_id)
+    .order("updated_at", { ascending: false })
+    .order("id")
+    .range(rangeStart, rangeStart + pageSize - 1);
+  if (filters.locale) translationQuery = translationQuery.eq("locale", filters.locale);
+  if (filters.status === "attention") translationQuery = translationQuery.neq("status", "approved");
+  else if (filters.status !== "all") translationQuery = translationQuery.eq("status", filters.status);
+
+  const [[translationResult, eligibleResult, readyDraftResult], localeSummaryResults] = await Promise.all([
+    Promise.all([
+      translationQuery,
+      supabase!.from("translations").select("id", { count: "exact", head: true }).eq("organization_id", membership.organization_id).in("status", ["missing", "stale", "error"]).eq("origin", "machine"),
+      supabase!.from("translations").select("id", { count: "exact", head: true }).eq("organization_id", membership.organization_id).eq("status", "machine_draft").not("translated_text", "is", null),
+    ]),
+    Promise.all(targetLocales.map(async (locale) => {
+      const [pendingResult, localeEligibleResult] = await Promise.all([
+        supabase!.from("translations").select("id", { count: "exact", head: true }).eq("organization_id", membership.organization_id).eq("locale", locale).neq("status", "approved"),
+        supabase!.from("translations").select("id", { count: "exact", head: true }).eq("organization_id", membership.organization_id).eq("locale", locale).in("status", ["missing", "stale", "error"]).eq("origin", "machine"),
+      ]);
+      return { locale, pendingResult, eligibleResult: localeEligibleResult };
+    })),
   ]);
-  const rows = (data ?? []) as TranslationRow[];
+  requireSuccessfulQueries(
+    "dashboard_translations_load_failed",
+    translationResult, eligibleResult, readyDraftResult,
+    ...localeSummaryResults.flatMap((summary) => [summary.pendingResult, summary.eligibleResult]),
+  );
+  const rows = (translationResult.data ?? []) as TranslationRow[];
+  const totalRows = translationResult.count ?? rows.length;
+  const totalPages = Math.max(1, Math.ceil(totalRows / pageSize));
+  if (filters.page > totalPages) {
+    redirect(translationListHref({ ...filters, page: totalPages }));
+  }
   const sourceMap = await loadTranslationSourceMap(
     supabase!,
     membership.organization_id,
@@ -52,17 +91,15 @@ export default async function TranslationsPage({
       entityId: row.entity_id,
       fieldName: row.field_name,
     })),
-  );
-  const byLocale = targetLocales.map((locale) => ({
-    locale,
-    rows: rows.filter((row) => row.locale === locale),
+  ).catch((error) => failProtectedQuery("dashboard_translation_sources_load_failed", error));
+  const byLocale = localeSummaryResults.map((summary) => ({
+    locale: summary.locale,
+    pending: summary.pendingResult.count ?? 0,
+    eligible: summary.eligibleResult.count ?? 0,
   }));
-  const visibleEligible = rows.filter(
-    (row) =>
-      ["missing", "stale", "error"].includes(row.status) &&
-      row.origin === "machine",
-  ).length;
-  const totalEligible = eligibleCount ?? visibleEligible;
+  const totalEligible = eligibleResult.count ?? 0;
+  const firstVisibleRow = totalRows ? rangeStart + 1 : 0;
+  const lastVisibleRow = Math.min(rangeStart + rows.length, totalRows);
 
   return (
     <TranslationGenerationProvider>
@@ -85,12 +122,11 @@ export default async function TranslationsPage({
         {params.translation_error && <p className="form-error" role="alert">{params.translation_error === "partial" ? "Alcune lingue non sono state generate: le altre bozze sono state conservate." : params.translation_error === "use-post" ? "La generazione richiede una conferma POST dal pulsante della pagina." : params.translation_error === "bulk-approval" ? "L’approvazione multipla è stata annullata: nessuna bozza è stata approvata. Controlla che le traduzioni siano ancora aggiornate." : "Operazione traduzioni non riuscita."}</p>}
 
         <section className="language-summary">
-          {byLocale.map(({ locale, rows: localeRows }) => {
-            const eligible = localeRows.filter((row) => ["missing", "stale", "error"].includes(row.status) && row.origin === "machine").length;
+          {byLocale.map(({ locale, pending, eligible }) => {
             return (
               <article key={locale}>
                 <span>{locale.toUpperCase()}</span>
-                <div><strong>{LOCALE_LABELS[locale]}</strong><small>{localeRows.filter((row) => row.status !== "approved").length} da rivedere</small></div>
+                <div><strong>{LOCALE_LABELS[locale]}</strong><small>{pending} da rivedere</small></div>
                 <TranslationGenerationForm
                   count={eligible}
                   label={`Generazione ${LOCALE_LABELS[locale]} in corso`}
@@ -104,10 +140,19 @@ export default async function TranslationsPage({
           })}
         </section>
 
-        <BulkApproveTranslations count={readyDraftCount ?? 0} />
+        <BulkApproveTranslations count={readyDraftResult.count ?? 0} />
 
-        <details className="dashboard-panel translation-table-panel translation-details">
-        <summary className="panel-heading"><div><p className="eyebrow">Dettaglio facoltativo</p><h2>Controlla o correggi le traduzioni</h2><small>Apri soltanto se vuoi leggere le singole righe.</small></div><span className="count-badge">{rows.length}</span></summary>
+        <details
+          className="dashboard-panel translation-table-panel translation-details"
+          open={Boolean(filters.locale || filters.status !== "attention" || filters.page > 1)}
+        >
+        <summary className="panel-heading"><div><p className="eyebrow">Dettaglio facoltativo</p><h2>Controlla o correggi le traduzioni</h2><small>{totalRows ? `${firstVisibleRow}–${lastVisibleRow} di ${totalRows} righe filtrate` : "Nessuna riga corrisponde ai filtri"}</small></div><span className="count-badge">{totalRows}</span></summary>
+        <form action="/dashboard/translations" method="get" className="translation-filter-bar">
+          <label>Lingua<select name="locale" defaultValue={filters.locale ?? ""}><option value="">Tutte</option>{targetLocales.map((locale) => <option value={locale} key={locale}>{LOCALE_LABELS[locale]}</option>)}</select></label>
+          <label>Stato<select name="status" defaultValue={filters.status}><option value="attention">Da rivedere</option><option value="all">Tutte</option><option value="machine_draft">Bozze AI</option><option value="missing">Mancanti</option><option value="stale">Da aggiornare</option><option value="error">Errori</option><option value="approved">Approvate</option></select></label>
+          <button className="button button-light">Applica filtri</button>
+          {(filters.locale || filters.status !== "attention") ? <Link href="/dashboard/translations">Azzera</Link> : null}
+        </form>
         {rows.length ? (
           <div className="translation-editor-list">
             {rows.map((row) => {
@@ -142,7 +187,14 @@ export default async function TranslationsPage({
               );
             })}
           </div>
-        ) : <div className="empty-state"><h3>Nessuna traduzione in coda</h3><p>Le righe vengono create automaticamente quando importi o modifichi un testo italiano.</p></div>}
+        ) : <div className="empty-state"><h3>Nessuna traduzione con questi filtri</h3><p>Modifica lingua o stato; le righe vengono create automaticamente quando importi o aggiorni un testo italiano.</p></div>}
+        {totalPages > 1 ? (
+          <nav className="translation-pagination" aria-label="Pagine traduzioni">
+            {filters.page > 1 ? <Link href={translationListHref({ ...filters, page: filters.page - 1 })}>← Precedenti</Link> : <span />}
+            <span>Pagina {filters.page} di {totalPages}</span>
+            {filters.page < totalPages ? <Link href={translationListHref({ ...filters, page: filters.page + 1 })}>Successive →</Link> : <span />}
+          </nav>
+        ) : null}
         </details>
       </main>
     </TranslationGenerationProvider>
