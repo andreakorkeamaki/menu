@@ -3,8 +3,10 @@
 import { useMemo, useState } from "react";
 import { MenuImageRegeneration } from "@/components/menu-image-regeneration";
 import { MenuItemMediaUploader, type MenuItemMediaAsset } from "@/components/dashboard/menu-item-media-uploader";
-
-export type RestaurantPhotoStatus = "approved" | "review" | "missing" | "rejected";
+import {
+  restaurantPhotoGenerationMode,
+  type RestaurantPhotoStatus,
+} from "@/lib/menu-photo-status";
 
 export type RestaurantPhotoItem = {
   id: string;
@@ -16,23 +18,6 @@ export type RestaurantPhotoItem = {
   status: RestaurantPhotoStatus;
   mediaAsset?: MenuItemMediaAsset & { aiJobId?: string | null; visualInstructions?: string | null };
 };
-
-export function restaurantPhotoStatus(input: {
-  imageUrl: string | null;
-  approvalStatus?: "draft" | "approved" | "rejected";
-}): RestaurantPhotoStatus {
-  if (input.approvalStatus === "draft") return "review";
-  if (input.imageUrl) return "approved";
-  if (input.approvalStatus === "rejected") return "rejected";
-  return "missing";
-}
-
-export function restaurantPhotoGenerationMode(input: {
-  imageUrl: string | null;
-  hasMediaAsset: boolean;
-}) {
-  return input.imageUrl || input.hasMediaAsset ? "regenerate" as const : "generate" as const;
-}
 
 const statusCopy: Record<RestaurantPhotoStatus, string> = {
   approved: "Approvata",

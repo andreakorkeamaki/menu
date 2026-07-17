@@ -1,10 +1,8 @@
 import { MenuImageGeneration } from "@/components/dashboard/menu-image-generation";
 import { MenuImageStyleStudio } from "@/components/dashboard/menu-image-style-studio";
-import {
-  RestaurantPhotoGallery,
-  restaurantPhotoStatus,
-} from "@/components/dashboard/restaurant-photo-gallery";
+import { RestaurantPhotoGallery } from "@/components/dashboard/restaurant-photo-gallery";
 import { requireMembership } from "@/lib/auth";
+import { restaurantPhotoStatus } from "@/lib/menu-photo-status";
 import { createClient } from "@/lib/supabase/server";
 import { requireSuccessfulQueries } from "@/lib/supabase/query-health";
 
