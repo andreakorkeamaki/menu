@@ -9,8 +9,9 @@ export default function HomePage() {
       <nav className="landing-nav" aria-label="Navigazione principale">
         <Brand />
         <div className="landing-nav-actions">
-          <Link href="/r/demo">Apri la demo</Link>
-          <Link className="button button-dark" href={demoRequestHref}>Richiedi una demo</Link>
+          <a href="#come-funziona">Come funziona</a>
+          <Link href="/r/demo">Menu demo</Link>
+          <Link className="button button-dark" href={demoRequestHref}>Parliamo del tuo menu</Link>
           <Link href="/login">Accedi</Link>
         </div>
       </nav>
@@ -24,7 +25,7 @@ export default function HomePage() {
           </p>
           <div className="hero-actions">
             <Link className="button button-accent" href={demoRequestHref}>Richiedi una demo</Link>
-            <Link className="text-link" href="/r/demo">Esplora il menu <span aria-hidden="true">↗</span></Link>
+            <Link className="text-link" href="/r/demo">Provalo come un ospite <span aria-hidden="true">↗</span></Link>
           </div>
           <dl className="hero-facts">
             <div><dt>5</dt><dd>lingue pronte</dd></div>
@@ -33,14 +34,27 @@ export default function HomePage() {
           </dl>
         </div>
         <div className="landing-preview" aria-label="Anteprima MenuInterattivo">
-          <div className="preview-browser-bar"><i /><i /><i /><span>menuinterattivo.it/r/osteria</span></div>
+          <div className="preview-browser-bar"><i /><i /><i /><span>menuinterattivo.it/r/osteria</span><strong>Online</strong></div>
           <div className="preview-card">
-            <p className="preview-kicker">Osteria del Portico</p>
+            <div className="preview-card-top"><p className="preview-kicker">Osteria del Portico</p><span>Bologna · IT</span></div>
             <h2>Cucina bolognese,<br />senza fretta.</h2>
             <div className="preview-languages"><span>IT</span><span>EN</span><span>FR</span><span>DE</span><span>ES</span></div>
             <div className="preview-menu-row"><span>Tagliatelle al ragù</span><strong>€16</strong></div>
             <div className="preview-menu-row"><span>Tortelloni burro e salvia</span><strong>€17</strong></div>
+            <p className="preview-footnote">Ingredienti, allergeni e disponibilità sempre a portata di tavolo.</p>
           </div>
+        </div>
+      </section>
+
+      <section className="landing-outcomes" aria-labelledby="outcomes-title">
+        <div className="landing-outcomes-intro">
+          <p className="eyebrow">Un dettaglio che cambia il servizio</p>
+          <h2 id="outcomes-title">Meno attrito al tavolo.<br /><em>Più spazio per l’ospitalità.</em></h2>
+        </div>
+        <div className="outcome-list">
+          <article><span>Per chi arriva</span><h3>Capire e scegliere, senza sentirsi fuori posto.</h3><p>Lingua, ingredienti e allergeni sono chiari nel momento in cui servono.</p></article>
+          <article><span>Per chi è in sala</span><h3>Le risposte ripetitive non interrompono più il servizio.</h3><p>Il personale resta presente dove conta: consiglio, cura e accoglienza.</p></article>
+          <article><span>Per chi gestisce</span><h3>Una modifica sola, visibile subito e senza ristampare il QR.</h3><p>Prezzi e disponibilità cambiano in bozza, poi vanno online solo dopo conferma.</p></article>
         </div>
       </section>
 
@@ -71,6 +85,16 @@ export default function HomePage() {
           <small>Onboarding assistito · Nessun nuovo gestionale da imparare · Revisione umana inclusa</small>
         </div>
       </section>
+
+      <footer className="landing-footer">
+        <div><Brand /><p>Menu digitali che rispettano l’identità del ristorante e il tempo di chi ci lavora.</p></div>
+        <nav aria-label="Navigazione a piè di pagina">
+          <div><span>Scopri</span><Link href="/r/demo">Menu demo</Link><a href="#come-funziona">Come funziona</a></div>
+          <div><span>Contatti</span><Link href={demoRequestHref}>Richiedi una demo</Link><a href="mailto:ciao@menuinterattivo.it" aria-label="Scrivici via email">ciao@menuinterattivo.it</a></div>
+          <div><span>Area riservata</span><Link href="/login">Accedi</Link><Link href="/privacy">Privacy</Link></div>
+        </nav>
+        <small>© 2026 MenuInterattivo · Fatto per l’ospitalità italiana.</small>
+      </footer>
     </main>
   );
 }
