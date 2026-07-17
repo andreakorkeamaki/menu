@@ -21,6 +21,14 @@ import {
 } from "@/lib/brand-media";
 
 const uuid = z.uuid();
+const menuEditorFocus = z.enum(["food-info", "descriptions"]);
+
+function menuItemActionHref(focus: string | null, key: "error" | "saved", value: string) {
+  const params = new URLSearchParams({ [key]: value });
+  if (focus) params.set("focus", focus);
+  return `/dashboard/menu?${params.toString()}`;
+}
+
 const menuItemSchema = z.object({
   id: uuid,
   name: z.string().trim().min(1).max(160),
@@ -36,6 +44,8 @@ const menuItemSchema = z.object({
 
 export async function saveMenuItem(formData: FormData) {
   const { membership } = await requireMembership();
+  const focusResult = menuEditorFocus.safeParse(formData.get("focus"));
+  const focus = focusResult.success ? focusResult.data : null;
   const parsed = menuItemSchema.safeParse({
     id: formData.get("id"), name: formData.get("name"), description: formData.get("description") || undefined,
     ingredients: formData.get("ingredients") || undefined,
@@ -45,7 +55,7 @@ export async function saveMenuItem(formData: FormData) {
     gluten_free: formData.get("gluten_free") === "on",
     allergens: formData.getAll("allergens"),
   });
-  if (!parsed.success) redirect("/dashboard/menu?error=invalid-item");
+  if (!parsed.success) redirect(menuItemActionHref(focus, "error", "invalid-item"));
   const supabase = await createClient();
   const { error } = await supabase!.rpc("save_menu_item_details", {
     p_item_id: parsed.data.id,
@@ -60,9 +70,9 @@ export async function saveMenuItem(formData: FormData) {
     p_gluten_free: parsed.data.gluten_free,
     p_allergen_ids: parsed.data.allergens,
   });
-  if (error) redirect(`/dashboard/menu?error=${error.code === "23514" || error.code === "23503" ? "food-claims" : encodeURIComponent(error.code ?? "save")}`);
+  if (error) redirect(menuItemActionHref(focus, "error", error.code === "23514" || error.code === "23503" ? "food-claims" : error.code ?? "save"));
   revalidatePath("/dashboard/menu");
-  redirect("/dashboard/menu?saved=1");
+  redirect(menuItemActionHref(focus, "saved", "1"));
 }
 
 export async function createCategory(formData: FormData) {

@@ -1,4 +1,4 @@
-import { MenuEditor } from "@/components/dashboard/menu-editor";
+import { MenuEditor, type MenuEditorFocus } from "@/components/dashboard/menu-editor";
 import { requireMembership } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { requireSuccessfulQueries } from "@/lib/supabase/query-health";
@@ -38,8 +38,9 @@ const mediaErrorMessages: Record<string, string> = {
   remove: "Non è stato possibile rimuovere la foto dalla bozza.",
 };
 
-export default async function MenuPage({ searchParams }: { searchParams: Promise<{ saved?: string; published?: string; changed?: string; error?: string; media_uploaded?: string; media_deleted?: string; media_error?: string }> }) {
+export default async function MenuPage({ searchParams }: { searchParams: Promise<{ saved?: string; published?: string; changed?: string; error?: string; media_uploaded?: string; media_deleted?: string; media_error?: string; focus?: string }> }) {
   const params = await searchParams;
+  const focus: MenuEditorFocus | null = params.focus === "food-info" || params.focus === "descriptions" ? params.focus : null;
   const { membership } = await requireMembership();
   const supabase = await createClient();
   const orgId = membership.organization_id;
@@ -85,7 +86,7 @@ export default async function MenuPage({ searchParams }: { searchParams: Promise
       {params.media_uploaded && <p className="form-success" role="status">Foto caricata nello spazio privato. Dopo il controllo qualità verrà collegata alla bozza del piatto.</p>}
       {params.media_deleted && <p className="form-success" role="status">Foto ritirata dalla revisione.</p>}
       {params.media_error && <p className="form-error" role="alert">{mediaErrorMessages[params.media_error] ?? "L’operazione sulla foto non è riuscita."}</p>}
-      {menuResult.data ? <MenuEditor menu={menuResult.data} categories={categoryResult.data ?? []} items={(itemResult.data ?? []).map((item) => ({ ...item, price: Number(item.price) }))} allergens={allergenResult.data ?? []} itemAllergens={itemAllergenResult.data ?? []} mediaAssets={mediaAssets} /> : <section className="empty-state"><h2>Nessun menu configurato</h2><p>Chiedi all’operatore di completare il provisioning iniziale.</p></section>}
+      {menuResult.data ? <MenuEditor menu={menuResult.data} categories={categoryResult.data ?? []} items={(itemResult.data ?? []).map((item) => ({ ...item, price: Number(item.price) }))} allergens={allergenResult.data ?? []} itemAllergens={itemAllergenResult.data ?? []} mediaAssets={mediaAssets} focus={focus} /> : <section className="empty-state"><h2>Nessun menu configurato</h2><p>Chiedi all’operatore di completare il provisioning iniziale.</p></section>}
     </main>
   );
 }

@@ -90,11 +90,8 @@ export function MenuImageRegeneration({
         placeholder="Es. usa una coppetta coupe, mostra un assortimento più ricco, luce più naturale…"
       />
       <button className="button button-light" type="submit" disabled={running}>
-        {running
-          ? "Generazione in corso…"
-          : mode === "regenerate"
-            ? "Rigenera con queste indicazioni"
-            : `Genera la foto di ${itemName}`}
+        {running ? <span className="loading-spinner" aria-hidden="true" /> : null}
+        {running ? "Generazione in corso…" : mode === "regenerate" ? "Rigenera con queste indicazioni" : `Genera la foto di ${itemName}`}
       </button>
       <small>Puoi procedere anche senza una nota. Il risultato resta privato fino al controllo operatore.</small>
       {message ? <p className={message.type === "success" ? "form-success" : "form-error"} role={message.type === "success" ? "status" : "alert"}>{message.text}</p> : null}

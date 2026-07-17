@@ -10,6 +10,7 @@ export type ReadinessIssue = {
   code: string;
   title: string;
   detail: string;
+  href: string;
 };
 
 export function buildPublicationReadiness({
@@ -29,24 +30,24 @@ export function buildPublicationReadiness({
   const missingDescriptions = availableItems.filter((item) => !item.description).length;
 
   if (!locationConfigured) {
-    issues.push({ severity: "blocker", code: "location", title: "Completa il sito del ristorante", detail: "Nome, sede e slug pubblico devono essere configurati prima della pubblicazione." });
+    issues.push({ severity: "blocker", code: "location", title: "Completa il sito del ristorante", detail: "Nome, sede e slug pubblico devono essere configurati prima della pubblicazione.", href: "/dashboard/site" });
   }
   if (categoryCount === 0) {
-    issues.push({ severity: "blocker", code: "categories", title: "Aggiungi almeno una categoria", detail: "Il menu pubblico ha bisogno di una struttura leggibile." });
+    issues.push({ severity: "blocker", code: "categories", title: "Aggiungi almeno una categoria", detail: "Il menu pubblico ha bisogno di una struttura leggibile.", href: "/dashboard/menu" });
   }
   if (items.length === 0) {
-    issues.push({ severity: "blocker", code: "items", title: "Aggiungi almeno un piatto", detail: "Non è possibile pubblicare un menu vuoto." });
+    issues.push({ severity: "blocker", code: "items", title: "Aggiungi almeno un piatto", detail: "Non è possibile pubblicare un menu vuoto.", href: "/dashboard/menu" });
   } else if (availableItems.length === 0) {
-    issues.push({ severity: "blocker", code: "availability", title: "Rendi disponibile almeno un piatto", detail: "Tutti i piatti risultano non disponibili." });
+    issues.push({ severity: "blocker", code: "availability", title: "Rendi disponibile almeno un piatto", detail: "Tutti i piatti risultano non disponibili.", href: "/dashboard/menu" });
   }
   if (pendingTranslations > 0) {
-    issues.push({ severity: "blocker", code: "translations", title: `${pendingTranslations} traduzioni richiedono attenzione`, detail: "Genera o approva le righe obsolete prima di sostituire la versione online." });
+    issues.push({ severity: "blocker", code: "translations", title: `${pendingTranslations} traduzioni richiedono attenzione`, detail: "Genera o approva le righe obsolete prima di sostituire la versione online.", href: "/dashboard/translations" });
   }
   if (foodInfoToVerify > 0) {
-    issues.push({ severity: "warning", code: "food-info", title: `Verifica le informazioni alimentari di ${foodInfoToVerify} piatti`, detail: "Non risultano ingredienti né allergeni dichiarati. Conferma che l’assenza sia intenzionale." });
+    issues.push({ severity: "warning", code: "food-info", title: `Verifica le informazioni alimentari di ${foodInfoToVerify} piatti`, detail: "Non risultano ingredienti né allergeni dichiarati. Conferma che l’assenza sia intenzionale.", href: "/dashboard/menu?focus=food-info" });
   }
   if (missingDescriptions > 0) {
-    issues.push({ severity: "warning", code: "descriptions", title: `${missingDescriptions} piatti non hanno una descrizione`, detail: "Puoi pubblicare comunque, ma una breve descrizione rende il menu più chiaro e traducibile." });
+    issues.push({ severity: "warning", code: "descriptions", title: `${missingDescriptions} piatti non hanno una descrizione`, detail: "Puoi pubblicare comunque, ma una breve descrizione rende il menu più chiaro e traducibile.", href: "/dashboard/menu?focus=descriptions" });
   }
 
   const blockers = issues.filter((issue) => issue.severity === "blocker");

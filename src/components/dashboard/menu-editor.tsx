@@ -10,8 +10,15 @@ import {
   saveMenuItem,
 } from "@/app/dashboard/actions";
 import { PendingSubmitButton } from "@/components/pending-submit-button";
+import {
+  MenuReviewFocusEditor,
+  type MenuEditorFocus,
+} from "@/components/dashboard/menu-review-focus-editor";
 import type { MenuItemMediaAsset } from "@/components/dashboard/menu-item-media-uploader";
 import { formatCurrency } from "@/lib/format";
+
+export { filterMenuEditorItems } from "@/components/dashboard/menu-review-focus-editor";
+export type { MenuEditorFocus } from "@/components/dashboard/menu-review-focus-editor";
 
 type Category = { id: string; name_it: string; slug: string; sort_order: number };
 type Item = { id: string; category_id: string; name_it: string; description_it: string | null; ingredients_it: string | null; price: number; available: boolean; vegetarian: boolean; vegan: boolean; gluten_free: boolean; image_url: string | null; sort_order: number };
@@ -30,10 +37,14 @@ function OrderControls({ id, type, index, total }: { id: string; type: "category
   );
 }
 
-export function MenuEditor({ menu, categories, items, allergens, itemAllergens, mediaAssets = {} }: { menu: { id: string; name: string }; categories: Category[]; items: Item[]; allergens: Allergen[]; itemAllergens: ItemAllergen[]; mediaAssets?: Record<string, MenuItemMediaAsset> }) {
+export function MenuEditor({ menu, categories, items, allergens, itemAllergens, mediaAssets = {}, focus = null }: { menu: { id: string; name: string }; categories: Category[]; items: Item[]; allergens: Allergen[]; itemAllergens: ItemAllergen[]; mediaAssets?: Record<string, MenuItemMediaAsset>; focus?: MenuEditorFocus | null }) {
   const approvedPhotos = items.filter((item) => Boolean(item.image_url)).length;
   const reviewPhotos = items.filter((item) => mediaAssets[item.id]?.approval_status === "draft").length;
   const incompletePhotos = Math.max(0, items.length - approvedPhotos - reviewPhotos);
+  if (focus) {
+    return <MenuReviewFocusEditor categories={categories} items={items} allergens={allergens} itemAllergens={itemAllergens} focus={focus} />;
+  }
+
   return (
     <div className="menu-editor">
       <section className="dashboard-panel category-panel">

@@ -10,13 +10,18 @@ import {
   MENU_IMAGE_PROMPT_VERSION,
   MENU_IMAGE_QUALITY,
   MENU_IMAGE_SIZE,
+  MenuImageQualitySchema,
   menuImagePrompt,
   menuImageSourceFromItem,
   menuImageSourceHash,
 } from "@/lib/ai/menu-image";
 import { getImageModel } from "@/lib/ai/config";
 import { sourceHash } from "@/lib/ai/source-hash";
-import { menuItemMediaObjectPath } from "@/lib/brand-media";
+import {
+  BRAND_MEDIA_MAX_BYTES,
+  detectBrandImageMime,
+  menuItemMediaObjectPath,
+} from "@/lib/brand-media";
 import {
   ACTIVE_ORGANIZATION_COOKIE,
   selectMembership,
@@ -36,6 +41,8 @@ const RequestSchema = z.object({
   menu_id: z.uuid().optional(),
   generation_context: z.enum(["manual", "style_sample", "catalog_regeneration"]).optional().default("manual"),
   batch_id: z.uuid().nullable().optional(),
+  quality: MenuImageQualitySchema.optional(),
+  use_logo: z.boolean().optional().default(false),
 });
 
 const CompletionSchema = z.object({
@@ -92,6 +99,14 @@ export async function POST(request: Request) {
     selection = RequestSchema.parse(await request.json());
   } catch {
     return Response.json({ error: "Prodotto o indicazioni non validi." }, { status: 400 });
+  }
+  if (
+    selection.generation_context !== "style_sample"
+    && (selection.quality !== undefined || selection.use_logo)
+  ) {
+    return Response.json({
+      error: "Qualità personalizzata e logo sono disponibili soltanto per le quattro prove.",
+    }, { status: 400 });
   }
 
   const userClient = await createClient();
@@ -199,9 +214,61 @@ export async function POST(request: Request) {
     }, { status: 409 });
   }
 
+  const quality = selection.quality ?? MENU_IMAGE_QUALITY;
+  let logoAssetId: string | null = null;
+  let logoReference: {
+    bytes: Buffer;
+    mimeType: "image/jpeg" | "image/png" | "image/webp";
+  } | undefined;
+  if (selection.use_logo) {
+    const { data: logoAsset, error: logoAssetError } = await admin
+      .from("media_assets")
+      .select("id,bucket_id,object_path,mime_type")
+      .eq("organization_id", organizationId)
+      .eq("media_kind", "logo")
+      .eq("bucket_id", "public-media")
+      .eq("approval_status", "approved")
+      .eq("is_public", true)
+      .order("approved_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (logoAssetError) {
+      return Response.json({ error: "Impossibile verificare il logo approvato." }, { status: 500 });
+    }
+    if (!logoAsset) {
+      return Response.json({
+        code: "approved_logo_required",
+        error: "Carica e fai approvare il logo del ristorante prima di usarlo nelle prove.",
+      }, { status: 409 });
+    }
+    const { data: logoBlob, error: logoDownloadError } = await admin.storage
+      .from("public-media")
+      .download(logoAsset.object_path);
+    if (logoDownloadError || !logoBlob) {
+      return Response.json({ error: "Il logo approvato non è temporaneamente disponibile." }, { status: 500 });
+    }
+    const logoBytes = Buffer.from(await logoBlob.arrayBuffer());
+    const detectedLogoMime = detectBrandImageMime(logoBytes.subarray(0, 12));
+    if (
+      !detectedLogoMime
+      || detectedLogoMime !== logoAsset.mime_type
+      || logoBytes.length === 0
+      || logoBytes.length > BRAND_MEDIA_MAX_BYTES
+    ) {
+      return Response.json({
+        code: "invalid_approved_logo",
+        error: "Il logo approvato non è un’immagine valida. Caricane una nuova dal pannello Sito.",
+      }, { status: 409 });
+    }
+    logoAssetId = logoAsset.id;
+    logoReference = { bytes: logoBytes, mimeType: detectedLogoMime };
+  }
+
   const source = menuImageSourceFromItem(item, category.name_it);
   const sourceDigest = menuImageSourceHash(source);
-  const prompt = menuImagePrompt(source, selection.instructions);
+  const prompt = menuImagePrompt(source, selection.instructions, {
+    includeRestaurantLogo: Boolean(logoReference),
+  });
   const promptDigest = sourceHash(prompt);
   const requestKey = sourceHash(JSON.stringify({
     organization_id: organizationId,
@@ -211,7 +278,8 @@ export async function POST(request: Request) {
     prompt_hash: promptDigest,
     prompt_version: MENU_IMAGE_PROMPT_VERSION,
     source_asset_id: replacement?.id ?? null,
-    quality: MENU_IMAGE_QUALITY,
+    quality,
+    logo_asset_id: logoAssetId,
     size: MENU_IMAGE_SIZE,
   }));
   const activeSince = new Date(Date.now() - 15 * 60 * 1000).toISOString();
@@ -256,6 +324,7 @@ export async function POST(request: Request) {
       visual_instructions: selection.instructions || null,
       generation_context: selection.generation_context,
       batch_id: selection.batch_id ?? null,
+      logo_asset_id: logoAssetId,
       provenance: {
         type: replacement
           ? "regeneration"
@@ -267,8 +336,12 @@ export async function POST(request: Request) {
         source_image_present: Boolean(item.image_url),
         workflow: selection.generation_context,
         batch_id: selection.batch_id ?? null,
+        brand_reference: logoAssetId ? {
+          type: "approved_restaurant_logo",
+          asset_id: logoAssetId,
+        } : null,
       },
-      quality: MENU_IMAGE_QUALITY,
+      quality,
       size: MENU_IMAGE_SIZE,
       output_format: MENU_IMAGE_FORMAT,
       output_compression: MENU_IMAGE_COMPRESSION,
@@ -283,7 +356,11 @@ export async function POST(request: Request) {
   let objectPath: string | null = null;
   let completionCommitted = false;
   try {
-    const generated = await createMenuImage(source, { instructions: selection.instructions });
+    const generated = await createMenuImage(source, {
+      instructions: selection.instructions,
+      quality,
+      logoReference,
+    });
     const [{ data: currentItem }, { data: currentCategory }] = await Promise.all([
       admin.from("menu_items")
         .select("id,name_it,description_it,ingredients_it,vegetarian,vegan,gluten_free")
@@ -355,6 +432,8 @@ export async function POST(request: Request) {
       replaced_asset_id: replacement?.id ?? null,
       preview_url: preview?.signedUrl ?? null,
       status: "in_review",
+      quality,
+      logo_used: Boolean(logoAssetId),
     });
   } catch (error) {
     if (objectPath && !completionCommitted) {

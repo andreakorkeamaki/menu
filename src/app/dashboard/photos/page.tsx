@@ -2,7 +2,7 @@ import { MenuImageGeneration } from "@/components/dashboard/menu-image-generatio
 import { MenuImageStyleStudio } from "@/components/dashboard/menu-image-style-studio";
 import { RestaurantPhotoGallery } from "@/components/dashboard/restaurant-photo-gallery";
 import { requireMembership } from "@/lib/auth";
-import { restaurantPhotoStatus } from "@/lib/menu-photo-status";
+import { normalizeRestaurantPhotoFilter, restaurantPhotoStatus } from "@/lib/menu-photo-status";
 import { createClient } from "@/lib/supabase/server";
 import { requireSuccessfulQueries } from "@/lib/supabase/query-health";
 
@@ -21,13 +21,14 @@ const mediaErrorMessages: Record<string, string> = {
 export default async function PhotosPage({
   searchParams,
 }: {
-  searchParams: Promise<{ media_uploaded?: string; media_deleted?: string; media_error?: string; changed?: string }>;
+  searchParams: Promise<{ media_uploaded?: string; media_deleted?: string; media_error?: string; changed?: string; filter?: string }>;
 }) {
   const params = await searchParams;
+  const initialFilter = normalizeRestaurantPhotoFilter(params.filter);
   const { membership } = await requireMembership();
   const supabase = await createClient();
   const organizationId = membership.organization_id;
-  const [menuResult, categoryResult, itemResult, mediaResult] = await Promise.all([
+  const [menuResult, categoryResult, itemResult, mediaResult, locationResult] = await Promise.all([
     supabase!.from("menus").select("id,name").eq("organization_id", organizationId).limit(1).maybeSingle(),
     supabase!.from("menu_categories").select("id,menu_id,name_it,sort_order").eq("organization_id", organizationId).order("sort_order"),
     supabase!.from("menu_items").select("id,category_id,name_it,description_it,ingredients_it,image_url,sort_order").eq("organization_id", organizationId).order("sort_order"),
@@ -35,8 +36,16 @@ export default async function PhotosPage({
       .select("id,menu_item_id,ai_job_id,bucket_id,object_path,approval_status,is_public,created_at")
       .eq("organization_id", organizationId)
       .order("created_at", { ascending: false }),
+    supabase!.from("locations")
+      .select("logo_url")
+      .eq("organization_id", organizationId)
+      .limit(1)
+      .maybeSingle(),
   ]);
-  requireSuccessfulQueries("dashboard_photos_load_failed", menuResult, categoryResult, itemResult, mediaResult);
+  requireSuccessfulQueries(
+    "dashboard_photos_load_failed",
+    menuResult, categoryResult, itemResult, mediaResult, locationResult,
+  );
 
   const categories = categoryResult.data ?? [];
   const items = itemResult.data ?? [];
@@ -114,7 +123,7 @@ export default async function PhotosPage({
         <article><span>Da completare</span><strong>{missingCount}</strong><small>mancanti o rifiutate</small></article>
       </section>
 
-      <MenuImageStyleStudio items={styleItems} />
+      <MenuImageStyleStudio items={styleItems} logoUrl={locationResult.data?.logo_url ?? null} />
       <MenuImageGeneration items={galleryItems.map((item) => ({
         id: item.id,
         name: item.name,
@@ -122,7 +131,7 @@ export default async function PhotosPage({
         mediaStatus: item.mediaAsset?.approval_status,
         assetId: item.mediaAsset?.id,
       }))} />
-      <RestaurantPhotoGallery items={galleryItems} />
+      <RestaurantPhotoGallery items={galleryItems} initialFilter={initialFilter} />
     </main>
   );
 }

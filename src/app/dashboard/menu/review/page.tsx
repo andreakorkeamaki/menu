@@ -157,21 +157,21 @@ export default async function MenuPublicationReviewPage({
             <article className="is-blocker" key={issue.code}>
               <span aria-hidden="true">!</span>
               <div><strong>{issue.title}</strong><p>{issue.detail}</p></div>
-              {issue.code === "translations" ? <Link href="/dashboard/translations">Apri traduzioni →</Link> : <Link href={issue.code === "location" ? "/dashboard/site" : "/dashboard/menu"}>Correggi →</Link>}
+              <Link href={issue.href}>{issue.code === "translations" ? "Apri traduzioni" : "Correggi"} →</Link>
             </article>
           ))}
           {readiness.warnings.map((issue) => (
             <article className="is-warning" key={issue.code}>
               <span aria-hidden="true">i</span>
               <div><strong>{issue.title}</strong><p>{issue.detail}</p></div>
-              <Link href="/dashboard/menu">Rivedi →</Link>
+              <Link href={issue.href}>Rivedi →</Link>
             </article>
           ))}
           {pendingMedia > 0 ? (
             <article className="is-warning">
               <span aria-hidden="true">i</span>
               <div><strong>{pendingMedia === 1 ? "Una foto è ancora in revisione" : `${pendingMedia} foto sono ancora in revisione`}</strong><p>Puoi pubblicare ora, ma queste foto non entreranno nello snapshot finché un operatore non le approva. Dopo l’approvazione servirà una nuova pubblicazione.</p></div>
-              <Link href="/dashboard/menu">Controlla foto →</Link>
+              <Link href="/dashboard/photos?filter=review">Controlla foto →</Link>
             </article>
           ) : null}
         </section>

@@ -5,6 +5,7 @@ import { MenuImageRegeneration } from "@/components/menu-image-regeneration";
 import { MenuItemMediaUploader, type MenuItemMediaAsset } from "@/components/dashboard/menu-item-media-uploader";
 import {
   restaurantPhotoGenerationMode,
+  type RestaurantPhotoFilter,
   type RestaurantPhotoStatus,
 } from "@/lib/menu-photo-status";
 
@@ -26,8 +27,8 @@ const statusCopy: Record<RestaurantPhotoStatus, string> = {
   rejected: "Da sostituire",
 };
 
-export function RestaurantPhotoGallery({ items }: { items: RestaurantPhotoItem[] }) {
-  const [filter, setFilter] = useState<"all" | "approved" | "review" | "missing">("all");
+export function RestaurantPhotoGallery({ items, initialFilter = "all" }: { items: RestaurantPhotoItem[]; initialFilter?: RestaurantPhotoFilter }) {
+  const [filter, setFilter] = useState<RestaurantPhotoFilter>(initialFilter);
   const visible = useMemo(() => items.filter((item) => (
     filter === "all"
     || item.status === filter

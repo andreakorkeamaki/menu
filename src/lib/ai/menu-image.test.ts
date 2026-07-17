@@ -91,6 +91,15 @@ describe("menu image generation", () => {
     expect(menuImageSourceHash(source)).toBe(menuImageSourceHash(source));
   });
 
+  it("allows only the approved logo reference when branding is requested", () => {
+    const prompt = menuImagePrompt(source, "", { includeRestaurantLogo: true });
+
+    expect(prompt).toContain("Reference image 1 is the restaurant's approved logo");
+    expect(prompt).toContain("small, naturally integrated brand detail");
+    expect(prompt).toContain("no typography beyond the approved logo reference");
+    expect(prompt).not.toContain("Do not add labels, logos or typography");
+  });
+
   it("requests one medium landscape WebP and validates the returned file", async () => {
     delete process.env.OPENAI_IMAGE_MODEL;
     const webp = Buffer.from("RIFF0000WEBPgenerated-image");
@@ -118,6 +127,42 @@ describe("menu image generation", () => {
     );
     expect(result.bytes).toEqual(webp);
     expect(result.requestId).toBe("req-image-1");
+  });
+
+  it("uses a high-quality image edit when an approved logo reference is provided", async () => {
+    delete process.env.OPENAI_IMAGE_MODEL;
+    const webp = Buffer.from("RIFF0000WEBPgenerated-image");
+    const edit = vi.fn(async () => ({
+      data: [{ b64_json: webp.toString("base64") }],
+      usage: { total_tokens: 456 },
+      _request_id: "req-image-logo",
+    }));
+    const generate = vi.fn();
+    const openai = { images: { edit, generate } } as unknown as OpenAI;
+
+    const result = await createMenuImage(source, {
+      openai,
+      quality: "high",
+      logoReference: {
+        bytes: Buffer.from("RIFF0000WEBPapproved-logo"),
+        mimeType: "image/webp",
+      },
+    });
+
+    expect(edit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        model: "gpt-image-2",
+        image: expect.anything(),
+        size: "1536x1024",
+        quality: "high",
+        output_format: "webp",
+        prompt: expect.stringContaining("restaurant's approved logo"),
+      }),
+      { timeout: 240_000, maxRetries: 1 },
+    );
+    expect(generate).not.toHaveBeenCalled();
+    expect(result.bytes).toEqual(webp);
+    expect(result.requestId).toBe("req-image-logo");
   });
 
   it("rejects provider output that is not a real WebP payload", async () => {

@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 export type MenuImageStyleItem = {
@@ -12,6 +13,7 @@ export type MenuImageStyleItem = {
 };
 
 type RunKind = "sample" | "catalog";
+export type MenuImageSampleQuality = "medium" | "high";
 type ItemProgress = {
   status: "queued" | "running" | "saved" | "reused" | "failed";
   previewUrl?: string | null;
@@ -54,6 +56,8 @@ export function menuImageStylePayload(input: {
   replacementOverride?: string | null;
   generationContext: "style_sample" | "catalog_regeneration";
   batchId: string;
+  quality: MenuImageSampleQuality;
+  useLogo: boolean;
 }) {
   return {
     item_id: input.item.id,
@@ -61,6 +65,10 @@ export function menuImageStylePayload(input: {
     replace_asset_id: input.replacementOverride ?? input.item.replaceAssetId ?? null,
     generation_context: input.generationContext,
     batch_id: input.batchId,
+    ...(input.generationContext === "style_sample" ? {
+      quality: input.quality,
+      use_logo: input.useLogo,
+    } : {}),
   };
 }
 
@@ -73,18 +81,26 @@ export function menuImageStyleSummary(results: Record<string, ItemProgress>) {
   }), { completed: 0, saved: 0, reused: 0, failed: 0 });
 }
 
-export function MenuImageStyleStudio({ items }: { items: MenuImageStyleItem[] }) {
+export function MenuImageStyleStudio({ items, logoUrl = null }: { items: MenuImageStyleItem[]; logoUrl?: string | null }) {
   const router = useRouter();
   const runningRef = useRef(false);
   const replacementOverridesRef = useRef<Record<string, string>>({});
   const [instructions, setInstructions] = useState("");
+  const [sampleQuality, setSampleQuality] = useState<MenuImageSampleQuality>("medium");
+  const [useLogo, setUseLogo] = useState(false);
   const [selectedPreset, setSelectedPreset] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
   const [runKind, setRunKind] = useState<RunKind | null>(null);
+  const [runOptions, setRunOptions] = useState<{
+    quality: MenuImageSampleQuality;
+    useLogo: boolean;
+  } | null>(null);
   const [runItemIds, setRunItemIds] = useState<string[]>([]);
   const [results, setResults] = useState<Record<string, ItemProgress>>({});
   const [sampleReceipt, setSampleReceipt] = useState<{
     instructions: string;
+    quality: MenuImageSampleQuality;
+    useLogo: boolean;
     successfulIds: string[];
     previews: Record<string, string | null>;
   } | null>(null);
@@ -93,7 +109,13 @@ export function MenuImageStyleStudio({ items }: { items: MenuImageStyleItem[] })
   const summary = menuImageStyleSummary(results);
   const percent = runItemIds.length ? Math.round((summary.completed / runItemIds.length) * 100) : 0;
 
-  async function generateItem(item: MenuImageStyleItem, style: string, kind: RunKind, batchId: string) {
+  async function generateItem(
+    item: MenuImageStyleItem,
+    style: string,
+    kind: RunKind,
+    batchId: string,
+    sampleOptions: { quality: MenuImageSampleQuality; useLogo: boolean },
+  ) {
     setResults((current) => ({ ...current, [item.id]: { status: "running" } }));
     try {
       const response = await fetch("/api/openai/images/generate", {
@@ -105,6 +127,8 @@ export function MenuImageStyleStudio({ items }: { items: MenuImageStyleItem[] })
           replacementOverride: replacementOverridesRef.current[item.id],
           generationContext: kind === "sample" ? "style_sample" : "catalog_regeneration",
           batchId,
+          quality: sampleOptions.quality,
+          useLogo: sampleOptions.useLogo,
         })),
       });
       const payload = await response.json() as {
@@ -136,19 +160,27 @@ export function MenuImageStyleStudio({ items }: { items: MenuImageStyleItem[] })
   async function run(kind: RunKind) {
     if (runningRef.current || !items.length) return;
     const style = instructions.trim();
-    const reusableIds = kind === "catalog" && sampleReceipt?.instructions === style
+    const selectedSampleOptions = {
+      quality: sampleQuality,
+      useLogo: useLogo && Boolean(logoUrl),
+    };
+    const reusableIds = kind === "catalog"
+      && sampleReceipt?.instructions === style
+      && sampleReceipt.quality === "medium"
+      && !sampleReceipt.useLogo
       ? new Set(sampleReceipt.successfulIds)
       : new Set<string>();
     const targetItems = kind === "sample" ? samples : items;
     if (!targetItems.length) return;
     const confirmation = kind === "sample"
-      ? `Generare ${targetItems.length} ${targetItems.length === 1 ? "prova privata" : "prove private"}, una per categoria?`
+      ? `Generare ${targetItems.length} ${targetItems.length === 1 ? "prova privata" : "prove private"} in qualità ${selectedSampleOptions.quality === "high" ? "alta" : "media"}${selectedSampleOptions.useLogo ? ", usando il logo approvato" : ""}?`
       : `Rigenerare l’intero catalogo (${targetItems.length} prodotti) con queste indicazioni? Le immagini correnti resteranno disponibili fino al successo.`;
     if (!window.confirm(confirmation)) return;
 
     runningRef.current = true;
     setRunning(true);
     setRunKind(kind);
+    setRunOptions(kind === "sample" ? selectedSampleOptions : { quality: "medium", useLogo: false });
     setRunItemIds(targetItems.map((item) => item.id));
     const initialResults = Object.fromEntries(targetItems.map((item) => {
       if (reusableIds.has(item.id)) {
@@ -168,7 +200,7 @@ export function MenuImageStyleStudio({ items }: { items: MenuImageStyleItem[] })
     async function worker() {
       while (cursor < queue.length) {
         const item = queue[cursor++];
-        const result = await generateItem(item, style, kind, batchId);
+        const result = await generateItem(item, style, kind, batchId, selectedSampleOptions);
         if (result) successful.push(result);
       }
     }
@@ -178,6 +210,8 @@ export function MenuImageStyleStudio({ items }: { items: MenuImageStyleItem[] })
       if (kind === "sample") {
         setSampleReceipt({
           instructions: style,
+          quality: selectedSampleOptions.quality,
+          useLogo: selectedSampleOptions.useLogo,
           successfulIds: successful.map((result) => result.id),
           previews: Object.fromEntries(successful.map((result) => [result.id, result.previewUrl])),
         });
@@ -197,7 +231,7 @@ export function MenuImageStyleStudio({ items }: { items: MenuImageStyleItem[] })
           <h2>Trova l’atmosfera giusta prima di rifare tutto</h2>
           <p>Genera fino a quattro bozze private, una per categoria. Quando lo stile ti convince, applica le stesse indicazioni all’intero catalogo.</p>
         </div>
-        <span className="menu-image-quality">Qualità media · private</span>
+        <span className="menu-image-quality">Prove: qualità {sampleQuality === "high" ? "alta" : "media"} · 1536×1024</span>
       </div>
 
       <div className="style-studio-workspace">
@@ -234,8 +268,49 @@ export function MenuImageStyleStudio({ items }: { items: MenuImageStyleItem[] })
               placeholder="Es. sfondo chiaro in pietra, luce laterale morbida, stile editoriale naturale e inquadratura coerente…"
               disabled={running}
             />
-            <small>{instructions.length}/1000 · puoi anche provare il prompt v2 senza indicazioni aggiuntive.</small>
+            <small>{instructions.length}/1000 · puoi anche provare il prompt v3 senza indicazioni aggiuntive.</small>
           </label>
+          <fieldset className="style-sample-options">
+            <legend>Opzioni delle quattro prove</legend>
+            <p>La dimensione resta 1536×1024: cambia la qualità di rendering. Queste scelte non modificano la rigenerazione completa.</p>
+            <div className="style-quality-options">
+              {([
+                ["medium", "Media", "Più rapida, ideale per confrontare lo stile."],
+                ["high", "Alta", "Più dettaglio e costo maggiore, stessa dimensione."],
+              ] as const).map(([value, label, detail]) => (
+                <label className={sampleQuality === value ? "is-active" : ""} key={value}>
+                  <input
+                    type="radio"
+                    name="sample-quality"
+                    value={value}
+                    checked={sampleQuality === value}
+                    onChange={() => setSampleQuality(value)}
+                    disabled={running}
+                  />
+                  <span><strong>{label}</strong><small>{detail}</small></span>
+                </label>
+              ))}
+            </div>
+            <div className={`style-logo-option${logoUrl ? "" : " is-unavailable"}`}>
+              <div className="style-logo-preview">
+                {logoUrl ? (
+                  // Active restaurant logo is approved public media.
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={logoUrl} alt="" />
+                ) : <span aria-hidden="true">L</span>}
+              </div>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={useLogo}
+                  onChange={(event) => setUseLogo(event.currentTarget.checked)}
+                  disabled={running || !logoUrl}
+                />
+                <span><strong>Inserisci il logo nelle prove</strong><small>Lo useremo come riferimento approvato e come dettaglio discreto nella scena.</small></span>
+              </label>
+              {!logoUrl ? <Link href="/dashboard/site">Carica e fai approvare il logo →</Link> : null}
+            </div>
+          </fieldset>
         </div>
 
         <aside className="style-sample-plan">
@@ -257,7 +332,7 @@ export function MenuImageStyleStudio({ items }: { items: MenuImageStyleItem[] })
         <button className="button button-accent" type="button" onClick={() => void run("catalog")} disabled={running || items.length === 0}>
           {running && runKind === "catalog" ? `Rigenerazione · ${summary.completed}/${runItemIds.length}` : `Rigenera tutto il catalogo (${items.length})`}
         </button>
-        <small>Le immagini online e le bozze precedenti restano intatte finché ogni nuova versione non è stata generata con successo.</small>
+        <small>Qualità e logo valgono soltanto per le prove. Il catalogo completo resta in qualità media e senza logo finché non deciderai diversamente.</small>
       </div>
 
       {runItemIds.length ? (
@@ -265,7 +340,7 @@ export function MenuImageStyleStudio({ items }: { items: MenuImageStyleItem[] })
           <div className="menu-image-progress-copy">
             <div>
               <strong>{running ? (runKind === "sample" ? "Sto preparando le prove" : "Sto rigenerando il catalogo") : "Sessione completata"}</strong>
-              <span>{summary.completed}/{runItemIds.length} completate · {summary.saved} nuove{summary.reused ? ` · ${summary.reused} prove riutilizzate` : ""}{summary.failed ? ` · ${summary.failed} non riuscite` : ""}</span>
+              <span>{summary.completed}/{runItemIds.length} completate · {summary.saved} nuove{runKind === "sample" && runOptions ? ` · qualità ${runOptions.quality === "high" ? "alta" : "media"}${runOptions.useLogo ? " · con logo" : ""}` : ""}{summary.reused ? ` · ${summary.reused} prove riutilizzate` : ""}{summary.failed ? ` · ${summary.failed} non riuscite` : ""}</span>
             </div>
             <span>{percent}%</span>
           </div>

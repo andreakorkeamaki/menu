@@ -33,13 +33,31 @@ describe("MenuImageStyleStudio", () => {
       replacementOverride: "asset-new",
       generationContext: "style_sample",
       batchId: "00000000-0000-4000-8000-000000000099",
+      quality: "high",
+      useLogo: true,
     })).toEqual({
       item_id: "a1",
       instructions: "luce naturale",
       replace_asset_id: "asset-new",
       generation_context: "style_sample",
       batch_id: "00000000-0000-4000-8000-000000000099",
+      quality: "high",
+      use_logo: true,
     });
+  });
+
+  it("keeps sample-only quality and logo options out of catalog regeneration", () => {
+    expect(menuImageStylePayload({
+      item: items[0],
+      instructions: "",
+      generationContext: "catalog_regeneration",
+      batchId: "00000000-0000-4000-8000-000000000099",
+      quality: "high",
+      useLogo: true,
+    })).not.toEqual(expect.objectContaining({
+      quality: expect.anything(),
+      use_logo: expect.anything(),
+    }));
   });
 
   it("counts partial results and reused style samples", () => {
@@ -52,11 +70,18 @@ describe("MenuImageStyleStudio", () => {
   });
 
   it("renders style presets, category samples and both safe batch actions", () => {
-    const html = renderToStaticMarkup(<MenuImageStyleStudio items={items} />);
+    const html = renderToStaticMarkup(
+      <MenuImageStyleStudio items={items} logoUrl="https://example.test/logo.webp" />,
+    );
     expect(html).toContain("Trova l’atmosfera giusta prima di rifare tutto");
     expect(html).toContain("Editoriale chiaro");
     expect(html).toContain("Genera 4 prove");
     expect(html).toContain("Rigenera tutto il catalogo (6)");
+    expect(html).toContain("Opzioni delle quattro prove");
+    expect(html).toContain('value="medium"');
+    expect(html).toContain('value="high"');
+    expect(html).toContain("Inserisci il logo nelle prove");
+    expect(html).toContain('src="https://example.test/logo.webp"');
     expect(html).toContain("Antipasti");
     expect(html).not.toContain("E uno");
   });
