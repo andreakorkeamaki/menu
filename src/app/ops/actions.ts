@@ -7,6 +7,7 @@ import { requireOperator } from "@/lib/auth";
 import { resolveOwnerAuthUser } from "@/lib/auth-admin";
 import { getAiModelSettings } from "@/lib/ai/config";
 import { MENU_IMPORT_PROMPT_VERSION } from "@/lib/ai/menu-import";
+import { menuImageSourceFromItem, menuImageSourceHash } from "@/lib/ai/menu-image";
 import { MenuImportStagingSchema } from "@/lib/ai/schemas";
 import { classifyMenuImportSource } from "@/lib/import/source";
 import { ImportRetryClaimSchema, validatedRetrySource } from "@/lib/import/recovery";
@@ -63,7 +64,7 @@ export async function reviewBrandMedia(formData: FormData) {
 
   const supabase = await createClient();
   const { data: asset, error: assetError } = await supabase!.from("media_assets")
-    .select("id,organization_id,location_id,menu_id,menu_item_id,bucket_id,object_path,media_kind,mime_type,approval_status,is_public")
+    .select("id,organization_id,location_id,menu_id,menu_item_id,ai_job_id,bucket_id,object_path,media_kind,mime_type,approval_status,is_public")
     .eq("id", parsed.data.asset_id)
     .eq("organization_id", parsed.data.organization_id)
     .maybeSingle();
@@ -78,6 +79,48 @@ export async function reviewBrandMedia(formData: FormData) {
   ) redirect(mediaRedirect({ error: "not-reviewable" }));
 
   const admin = createAdminClient();
+  if (asset.ai_job_id && parsed.data.action === "approve") {
+    const [{ data: job, error: generatedJobError }, { data: currentItem, error: generatedItemError }] = await Promise.all([
+      admin.from("ai_jobs")
+        .select("id,kind,status,input")
+        .eq("id", asset.ai_job_id)
+        .eq("organization_id", asset.organization_id)
+        .maybeSingle(),
+      admin.from("menu_items")
+        .select("id,category_id,name_it,description_it,ingredients_it,vegetarian,vegan,gluten_free")
+        .eq("id", asset.menu_item_id!)
+        .eq("organization_id", asset.organization_id)
+        .maybeSingle(),
+    ]);
+    if (
+      generatedJobError
+      || generatedItemError
+      || !job
+      || !currentItem
+      || job.kind !== "image_generation"
+      || job.status !== "completed"
+      || typeof job.input !== "object"
+      || job.input === null
+      || (job.input as Record<string, unknown>).item_id !== asset.menu_item_id
+      || typeof (job.input as Record<string, unknown>).source_hash !== "string"
+    ) redirect(mediaRedirect({ error: "generated-source" }));
+
+    const { data: currentCategory, error: generatedCategoryError } = await admin.from("menu_categories")
+      .select("id,name_it")
+      .eq("id", currentItem.category_id)
+      .eq("organization_id", asset.organization_id)
+      .maybeSingle();
+    if (generatedCategoryError || !currentCategory) {
+      redirect(mediaRedirect({ error: "generated-source" }));
+    }
+    const currentSourceHash = menuImageSourceHash(
+      menuImageSourceFromItem(currentItem, currentCategory.name_it),
+    );
+    if (currentSourceHash !== (job.input as Record<string, unknown>).source_hash) {
+      redirect(mediaRedirect({ error: "generated-stale" }));
+    }
+  }
+
   if (parsed.data.action === "reject") {
     const { error } = await supabase!.rpc("review_brand_media", {
       p_asset_id: asset.id,

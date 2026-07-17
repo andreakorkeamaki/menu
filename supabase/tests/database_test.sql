@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(154);
+select plan(156);
 
 select has_table('public', 'menus', 'draft menus table exists');
 select has_table('public', 'menu_publications', 'publication snapshot table exists');
@@ -13,6 +13,7 @@ select has_table('private', 'public_form_rate_limits', 'public form quotas stay 
 select has_table('private', 'public_form_events', 'privacy-minimized intake telemetry stays private');
 select has_view('public', 'latest_menu_item_media_assets', 'dish editor has an RLS-aware latest-media view');
 select has_column('public', 'media_assets', 'menu_item_id', 'dish media has an explicit normalized target');
+select has_column('public', 'media_assets', 'ai_job_id', 'generated media records its originating AI job');
 select is(
   (
     select count(*)
@@ -26,6 +27,20 @@ select is(
   ),
   1::bigint,
   'dish media target is protected by a tenant-scoped foreign key'
+);
+select is(
+  (
+    select count(*)
+    from pg_constraint constraint_row
+    join pg_class relation on relation.oid = constraint_row.conrelid
+    join pg_namespace namespace on namespace.oid = relation.relnamespace
+    where namespace.nspname = 'public'
+      and relation.relname = 'media_assets'
+      and constraint_row.conname = 'media_assets_organization_ai_job_fkey'
+      and constraint_row.contype = 'f'
+  ),
+  1::bigint,
+  'generated media provenance is protected by a tenant-scoped foreign key'
 );
 select has_function('public', 'publish_menu', array['uuid', 'uuid'], 'publish RPC has the application signature');
 select has_function(

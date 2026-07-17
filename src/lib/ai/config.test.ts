@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { getAiModelSettings, requireOpenAIApiKey } from "@/lib/ai/config";
+import { getAiModelSettings, getImageModel, requireOpenAIApiKey } from "@/lib/ai/config";
 
 const originalEnv = { ...process.env };
 
@@ -27,6 +27,13 @@ describe("AI model configuration", () => {
       model: "gpt-5.6-luna",
       reasoningEffort: "xhigh",
     });
+  });
+
+  it("keeps the image model independently configurable", () => {
+    delete process.env.OPENAI_IMAGE_MODEL;
+    expect(getImageModel()).toBe("gpt-image-2");
+    process.env.OPENAI_IMAGE_MODEL = "image-model";
+    expect(getImageModel()).toBe("image-model");
   });
 
   it("fails with an operational message when the server key is absent", () => {
