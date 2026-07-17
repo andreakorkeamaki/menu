@@ -8,6 +8,7 @@ export interface MenuImageGenerationItem {
   name: string;
   hasImage: boolean;
   mediaStatus?: "draft" | "approved" | "rejected";
+  assetId?: string;
 }
 
 type ItemProgress = {
@@ -17,9 +18,9 @@ type ItemProgress = {
 };
 
 const ROTATING_COPY = [
-  "Mantengo luce, inquadratura e sfondo coerenti tra tutti i piatti.",
+  "Mantengo luce, inquadratura e sfondo coerenti tra tutti i prodotti.",
   "Ogni risultato viene salvato come bozza privata, mai direttamente online.",
-  "Procedo a due piatti per volta per mantenere stabile la coda di generazione.",
+  "Procedo a due prodotti per volta per mantenere stabile la coda di generazione.",
   "La qualità media privilegia una resa naturale adatta alle schede del menu.",
 ];
 
@@ -31,10 +32,10 @@ export function menuImageProgressCopy(
 ) {
   if (total === 0) return "Tutte le immagini sono già presenti o in revisione.";
   if (completed === total) return "Generazione completata. Aggiorno le bozze del catalogo.";
-  if (elapsedSeconds < 3) return "Preparo le descrizioni visive e avvio la prima coppia di piatti.";
+  if (elapsedSeconds < 3) return "Preparo le descrizioni visive e avvio la prima coppia di prodotti.";
   const current = runningNames.length
     ? `In lavorazione: ${runningNames.join(" e ")}. `
-    : "Preparo i prossimi piatti. ";
+    : "Preparo i prossimi prodotti. ";
   const rotating = ROTATING_COPY[Math.floor(elapsedSeconds / 7) % ROTATING_COPY.length];
   return `${current}${rotating}`;
 }
@@ -121,7 +122,10 @@ export function MenuImageGeneration({ items }: { items: MenuImageGenerationItem[
       const response = await fetch("/api/openai/images/generate", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ item_id: item.id }),
+        body: JSON.stringify({
+          item_id: item.id,
+          replace_asset_id: item.mediaStatus === "rejected" ? item.assetId ?? null : null,
+        }),
       });
       const result = await response.json() as {
         code?: string;
@@ -202,13 +206,13 @@ export function MenuImageGeneration({ items }: { items: MenuImageGenerationItem[
         <div>
           <p className="eyebrow">Studio immagini AI</p>
           <h2>Completa le foto del catalogo</h2>
-          <p>Un solo comando genera esclusivamente i piatti senza immagine. Ogni risultato resta privato fino alla revisione manuale.</p>
+          <p>Un solo comando genera esclusivamente i prodotti senza immagine. Ogni risultato resta privato fino alla revisione manuale.</p>
         </div>
         <span className="menu-image-quality">Qualità media · WebP</span>
       </div>
 
       <div className="menu-image-metrics" aria-label="Stato immagini del menu">
-        <article><span>Piatti</span><strong>{items.length}</strong><small>nel catalogo</small></article>
+        <article><span>Prodotti</span><strong>{items.length}</strong><small>nel catalogo</small></article>
         <article><span>Presenti</span><strong>{presentCount}</strong><small>già in bozza</small></article>
         <article><span>In revisione</span><strong>{reviewCount}</strong><small>ancora private</small></article>
         <article><span>Da generare</span><strong>{eligible.length}</strong><small>incluse le rifiutate</small></article>
@@ -247,7 +251,7 @@ export function MenuImageGeneration({ items }: { items: MenuImageGenerationItem[
           <p className="menu-image-live-copy" role="status" aria-live="polite">{statusCopy}</p>
 
           {visibleActivity.length ? (
-            <ul className="menu-image-activity" aria-label="Ultimi piatti elaborati">
+            <ul className="menu-image-activity" aria-label="Ultimi prodotti elaborati">
               {visibleActivity.map((id) => {
                 const item = itemById.get(id);
                 const itemProgress = progress[id];

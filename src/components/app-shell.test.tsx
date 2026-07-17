@@ -23,5 +23,25 @@ describe("AppShell", () => {
     expect(html).toContain('class="mobile-signout"');
     expect(html).toContain(">Esci</button>");
     expect(html).toContain('aria-current="page"');
+    expect(html).toContain('href="/dashboard/photos"');
+  });
+
+  it("never offers a mode switch to an operator with a legacy membership", () => {
+    const html = renderToStaticMarkup(
+      <AppShell
+        area="ops"
+        context={{
+          profile: { id: "operator-1", full_name: "Andrea" },
+          memberships: [{ id: "member-1", organization_id: "org-1", user_id: "operator-1", role: "owner" }],
+          isOperator: true,
+        }}
+      >
+        <main>Operazioni</main>
+      </AppShell>,
+    );
+
+    expect(html).toContain('href="/ops/restaurants"');
+    expect(html).not.toContain('href="/dashboard"');
+    expect(html).not.toContain("Vai al ristorante");
   });
 });

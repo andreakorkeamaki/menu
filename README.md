@@ -55,7 +55,10 @@ procedura e non devono essere modificati.
    sul server per trasformare email e indirizzi di rete in fingerprint non reversibili.
 4. Imposta `PLATFORM_OPERATOR_EMAILS` con l'email esatta di Andrea. Al primo accesso valido
    il server registra o riattiva l'utente in `platform_staff`; RLS continua ad autorizzare
-   esclusivamente dalla tabella, non da `user_metadata`.
+   esclusivamente dalla tabella, non da `user_metadata`. Non usare questa email come owner
+   di un ristorante: il provisioning richiede un account cliente separato. Dopo il login gli
+   operatori entrano sempre in `/ops`, mentre i membri dei ristoranti entrano in `/dashboard`;
+   l'interfaccia non consente di cambiare area nella stessa sessione.
 5. In Supabase disabilita il signup pubblico, imposta Site URL e la callback Auth esatta, quindi
    richiedi password di almeno 12 caratteri con maiuscole, minuscole e numeri. Abilita la
    protezione dalle password compromesse quando disponibile e verifica che il bucket `intake`

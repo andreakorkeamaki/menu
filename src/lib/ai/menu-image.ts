@@ -5,7 +5,7 @@ import { getImageModel } from "@/lib/ai/config";
 import { sourceHash } from "@/lib/ai/source-hash";
 import { detectBrandImageMime, MENU_ITEM_MEDIA_MAX_BYTES } from "@/lib/brand-media";
 
-export const MENU_IMAGE_PROMPT_VERSION = "menu-image-v1";
+export const MENU_IMAGE_PROMPT_VERSION = "menu-image-v2";
 export const MENU_IMAGE_QUALITY = "medium" as const;
 export const MENU_IMAGE_SIZE = "1536x1024" as const;
 export const MENU_IMAGE_FORMAT = "webp" as const;
@@ -23,6 +23,16 @@ export const MenuImageSourceSchema = z.object({
 });
 
 export type MenuImageSource = z.infer<typeof MenuImageSourceSchema>;
+
+export const MenuImageInstructionsSchema = z.string().trim().max(1_000);
+
+export type MenuImagePresentation =
+  | "board"
+  | "cocktail"
+  | "wine"
+  | "drink"
+  | "dessert"
+  | "dish";
 
 export function menuImageSourceFromItem(
   item: {
@@ -52,28 +62,99 @@ export function menuImageSourceHash(source: MenuImageSource) {
   return sourceHash(JSON.stringify(MenuImageSourceSchema.parse(source)));
 }
 
-export function menuImagePrompt(source: MenuImageSource) {
+function searchableMenuText(source: MenuImageSource) {
+  return [source.name, source.category, source.description, source.ingredients]
+    .filter(Boolean)
+    .join(" ")
+    .toLocaleLowerCase("it-IT");
+}
+
+function normalizedMenuText(...values: Array<string | null>) {
+  return values.filter(Boolean).join(" ").toLocaleLowerCase("it-IT");
+}
+
+export function menuImagePresentation(source: MenuImageSource): MenuImagePresentation {
   const input = MenuImageSourceSchema.parse(source);
+  const category = normalizedMenuText(input.category);
+  const title = normalizedMenuText(input.name, input.category);
+  const description = normalizedMenuText(input.description);
+  const boardCue = /\b(taglier[ei]|charcuterie|assortimento|selezione (?:di )?(?:salumi|formaggi)|salumi (?:e|con) formaggi|formaggi (?:e|con) salumi|formaggi misti)\b/;
+  const cocktailCue = /\b(cocktail|mocktail|spritz|martini|negroni|coupe)\b/;
+  const wineCue = /\b(vin[oi]|wine|ros[ée]|bollicine|prosecco|champagne|calice)\b/;
+  const drinkCue = /\b(bibit[ae]|bevanda|drink|aperitiv[oi]|birra|beer|soda|cola|limonata|acqua|caff[eè]|t[eè]|succo|frullato)\b/;
+  const dessertCue = /\b(dolc[ei]|dessert|torta|tiramis[uù]|gelato|sorbetto|semifreddo|panna cotta|cheesecake|biscott[io])\b/;
+  const foodCategory = /\b(antipast[oi]|prim[oi]|second[oi]|contorn[oi]|piatt[oi]|pizz[ae]|past[ae]|carn[ei]|pesc[ei]|insalat[ae]|panin[oi]|burger)\b/;
+
+  if (boardCue.test(title)) return "board";
+  if (foodCategory.test(category)) return "dish";
+  if (cocktailCue.test(title)) return "cocktail";
+  if (wineCue.test(title)) return "wine";
+  if (dessertCue.test(title)) return "dessert";
+
+  // Descriptive fallbacks help generically named products, while ingredients
+  // remain prompt evidence rather than overriding an explicit food category.
+  if (boardCue.test(description)) return "board";
+  if (cocktailCue.test(description)) return "cocktail";
+  if (wineCue.test(description)) return "wine";
+  if (drinkCue.test(title)) return "drink";
+  if (drinkCue.test(description)) return "drink";
+  if (dessertCue.test(description)) return "dessert";
+  return "dish";
+}
+
+function presentationDirection(source: MenuImageSource) {
+  const presentation = menuImagePresentation(source);
+  if (presentation === "board") {
+    return "Present it as a generous, credible shared assortment on an appropriately sized wooden or stone serving board. Make multiple portions and the variety of the stated components immediately legible. Never compress a tagliere into a sparse ceramic plate.";
+  }
+  if (presentation === "cocktail") {
+    const text = searchableMenuText(source);
+    const coupe = /\b(coupe|coppetta)\b/.test(text);
+    return coupe
+      ? "Present the drink in the explicitly requested coupe/coppetta glass, with realistic liquid level, ice and garnish only when supported by the menu text. Do not place the drink in a bowl, plate or generic tumbler."
+      : "Choose authentic cocktail glassware that matches the named drink, with realistic liquid level, ice and garnish only when supported by the menu text. Do not place the drink in a bowl or on a plate.";
+  }
+  if (presentation === "wine") {
+    return "Present the wine or sparkling wine as the actual menu product in suitable, true-to-life wine glassware; include a bottle only when the menu wording implies one. Do not place the beverage in food crockery.";
+  }
+  if (presentation === "drink") {
+    return "Present the beverage in the contextually correct glass, cup or bottle for the named product, with natural liquid colour and fill level. Do not place it in a food bowl or on a plate.";
+  }
+  if (presentation === "dessert") {
+    return "Choose dessert service that fits the named preparation: a small plate, bowl, glass or cup as appropriate. Preserve believable texture, scale and portion size rather than forcing every dessert onto the same plate.";
+  }
+  return "Choose the serving vessel from the food itself: use a plate, shallow bowl, deep bowl, baking dish or other authentic restaurant service only when contextually appropriate. Never force every item onto the same generic ceramic plate.";
+}
+
+export function menuImagePrompt(source: MenuImageSource, instructions = "") {
+  const input = MenuImageSourceSchema.parse(source);
+  const additionalInstructions = MenuImageInstructionsSchema.parse(instructions);
   const dietaryNotes = [
     input.vegan ? "vegan" : input.vegetarian ? "vegetarian" : null,
     input.gluten_free ? "gluten-free" : null,
   ].filter(Boolean).join(", ");
 
-  return `Create one realistic editorial restaurant photograph of the following dish.
+  return `Create one highly photorealistic editorial restaurant photograph of the exact menu product described below.
 
-Dish name: ${input.name}
+Product name: ${input.name}
 Menu category: ${input.category}
 Description: ${input.description || "No additional description provided."}
 Ingredients explicitly provided: ${input.ingredients || "No ingredient list provided."}
 Dietary information: ${dietaryNotes || "No dietary claim provided."}
 
-The food must remain faithful to the supplied menu information. Do not add visible ingredients, garnishes, sauces, side dishes, labels, logos, text, people, hands, cutlery, drinks, or decorative props that are not supported by the description. When details are unspecified, choose a restrained and plausible Italian restaurant presentation without inventing a distinctive ingredient.
+Interpret whether this is a plated dish, a shared board, a dessert, a cocktail, a wine or another beverage from its name, category, description and ingredients. ${presentationDirection(input)}
 
-Use a consistent natural restaurant style: soft warm daylight, neutral stone tabletop, understated ceramic plate, true-to-life colours, appetising but not exaggerated, three-quarter camera angle, shallow depth of field. Show the complete plate centred with generous safe margins so it can be cropped to a 4:3 menu card. No collage, no border, no typography.`;
+The subject must remain faithful to the supplied menu information. Do not add visible ingredients, garnishes, sauces, side dishes, labels, logos, typography, people, hands or decorative props that are not supported by the description. When details are unspecified, choose a restrained and plausible Italian restaurant presentation without inventing a distinctive ingredient. Respect every dietary statement.
+
+Use real food photography characteristics: natural portions, true-to-life colours, small organic irregularities, realistic moisture and texture, physically plausible glass, ceramic, wood and reflections. Avoid CGI, 3D render, illustration, waxy surfaces, plastic-looking food, excessive gloss, impossible geometry, over-saturation and advertising-style abundance.
+
+${additionalInstructions ? `Additional visual direction from the reviewer: ${additionalInstructions}\nApply it when consistent with the menu facts and the safety constraints above.\n` : ""}
+Use a consistent, understated restaurant style: soft warm daylight, neutral stone or wood tabletop selected to suit the product, appetising but not exaggerated, three-quarter camera angle and gentle shallow depth of field. Show the complete product centred with generous safe margins so it can be cropped to a 4:3 menu card. No collage, no border, no typography.`;
 }
 
 export interface CreateMenuImageOptions {
   openai?: OpenAI;
+  instructions?: string;
 }
 
 export async function createMenuImage(
@@ -81,12 +162,13 @@ export async function createMenuImage(
   options: CreateMenuImageOptions = {},
 ) {
   const input = MenuImageSourceSchema.parse(source);
+  const instructions = MenuImageInstructionsSchema.parse(options.instructions ?? "");
   const model = getImageModel();
   const openai = options.openai ?? createOpenAIClient();
   const response = await openai.images.generate(
     {
       model,
-      prompt: menuImagePrompt(input),
+      prompt: menuImagePrompt(input, instructions),
       n: 1,
       size: MENU_IMAGE_SIZE,
       quality: MENU_IMAGE_QUALITY,

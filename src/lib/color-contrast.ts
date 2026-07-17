@@ -81,6 +81,41 @@ export function resolveAccessibleAccentPalette(input: {
   return { ...assessment, accent: input.accent, adjusted: false };
 }
 
+export function resolveAccessibleTextColor({
+  text,
+  background,
+  surface,
+}: {
+  text: string;
+  background: string;
+  surface: string;
+}) {
+  const candidates = [...new Set([text, "#171b18", "#ffffff"])];
+  const assessments = candidates.map((candidate) => {
+    const backgroundRatio = contrastRatio(candidate, background);
+    const surfaceRatio = contrastRatio(candidate, surface);
+    return {
+      text: candidate,
+      backgroundRatio,
+      surfaceRatio,
+      safe: [backgroundRatio, surfaceRatio]
+        .every((ratio) => ratio >= MINIMUM_TEXT_CONTRAST),
+    };
+  });
+  const assessment = assessments.find((candidate) => candidate.safe)
+    ?? assessments.reduce((best, candidate) => (
+      Math.min(candidate.backgroundRatio, candidate.surfaceRatio)
+        > Math.min(best.backgroundRatio, best.surfaceRatio)
+        ? candidate
+        : best
+    ));
+
+  return {
+    ...assessment,
+    adjusted: assessment.text.toLowerCase() !== text.toLowerCase(),
+  };
+}
+
 export function formatContrast(ratio: number) {
   return `${ratio.toFixed(1)}:1`;
 }

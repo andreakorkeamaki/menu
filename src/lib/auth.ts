@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
 import { cache } from "react";
+import { accessDestination } from "@/lib/access-destination";
 import { ensureAllowlistedOperator } from "@/lib/operator-access";
 import { ACTIVE_ORGANIZATION_COOKIE, selectMembership } from "@/lib/membership-selection";
 import { createClient } from "@/lib/supabase/server";
@@ -57,17 +58,18 @@ export async function requireUserContext() {
 
 export async function requireMembership() {
   const context = await requireUserContext();
+  if (context.isOperator) redirect(accessDestination(context));
   const cookieStore = await cookies();
   const membership = selectMembership(
     context.memberships,
     cookieStore.get(ACTIVE_ORGANIZATION_COOKIE)?.value,
   );
-  if (!membership) redirect(context.isOperator ? "/ops" : "/login?error=no-membership");
+  if (!membership) redirect(accessDestination(context));
   return { ...context, membership };
 }
 
 export async function requireOperator() {
   const context = await requireUserContext();
-  if (!context.isOperator) redirect("/dashboard");
+  if (!context.isOperator) redirect(accessDestination(context));
   return context;
 }

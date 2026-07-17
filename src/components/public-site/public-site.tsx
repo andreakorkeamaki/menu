@@ -2,7 +2,7 @@ import type { CSSProperties } from "react";
 import Link from "next/link";
 import { localized } from "@/lib/format";
 import { safeHttpUrl } from "@/lib/safe-url";
-import { resolveAccessibleAccentPalette } from "@/lib/color-contrast";
+import { resolveAccessibleAccentPalette, resolveAccessibleTextColor } from "@/lib/color-contrast";
 import type { Locale, PublicMenuSnapshot } from "@/types/domain";
 import { PUBLIC_COPY } from "./copy";
 import { LanguageSwitcher } from "./language-switcher";
@@ -23,10 +23,15 @@ function themeStyle(snapshot: PublicMenuSnapshot): ThemeStyle {
     background: snapshot.theme.background,
     surface: snapshot.theme.surface,
   });
+  const accessibleText = resolveAccessibleTextColor({
+    text: snapshot.theme.text,
+    background: snapshot.theme.background,
+    surface: snapshot.theme.surface,
+  });
   return {
     "--public-bg": snapshot.theme.background,
     "--public-surface": snapshot.theme.surface,
-    "--public-text": snapshot.theme.text,
+    "--public-text": accessibleText.text,
     "--public-muted": snapshot.theme.muted,
     "--public-accent": accessibleAccent.accent,
     "--public-accent-text": accessibleAccent.accentText,

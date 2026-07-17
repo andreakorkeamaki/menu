@@ -9,6 +9,7 @@ import { requireSuccessfulQueries } from "@/lib/supabase/query-health";
 
 const errorMessages: Record<string, string> = {
   invalid: "Controlla nomi, città, slug ed email.",
+  "operator-owner": "L’account operatore non può essere anche il proprietario del ristorante. Usa un’email separata per il ristorante di prova.",
   invite: "Non è stato possibile trovare o invitare il proprietario in Supabase Auth.",
   "23505": "Lo slug appartiene già a un altro onboarding.",
   "23503": "L’account Auth non corrisponde all’email del proprietario.",
@@ -66,7 +67,7 @@ export default async function NewRestaurantPage({ searchParams }: { searchParams
         {params.error && <p className="form-error" role="alert">{errorMessages[params.error] ?? "Provisioning non riuscito: nessuna modifica parziale è stata conservata."} Nessun menu è stato pubblicato.</p>}
         <div className="field-grid"><label>Organizzazione<input name="organization_name" defaultValue={defaults?.organizationName ?? ""} placeholder="Osteria del Portico SRL" required /></label><label>Nome pubblico<input name="location_name" defaultValue={defaults?.locationName ?? ""} placeholder="Osteria del Portico" required /></label></div>
         <div className="field-grid"><label>Città<input name="city" defaultValue={defaults?.city ?? ""} autoComplete="address-level2" placeholder="Bologna" required /></label><label>Slug pubblico<input name="slug" defaultValue={defaults?.slug ?? ""} placeholder="osteria-del-portico" pattern="[a-zA-Z0-9 -]+" required /><small>Diventerà /r/osteria-del-portico; il QR resta separato.</small></label></div>
-        <div className="field-grid"><label>Responsabile<input name="contact_name" defaultValue={defaults?.contactName ?? ""} placeholder="Nome e cognome" /></label><label>Email proprietario<input name="owner_email" defaultValue={defaults?.ownerEmail ?? ""} type="email" required /></label></div>
+        <div className="field-grid"><label>Responsabile<input name="contact_name" defaultValue={defaults?.contactName ?? ""} placeholder="Nome e cognome" /></label><label>Email proprietario<input name="owner_email" defaultValue={defaults?.ownerEmail ?? ""} type="email" required /><small>Deve essere un account ristorante separato dall’operatore.</small></label></div>
         <aside className="form-note"><strong>{lead ? "Una conferma, un solo passaggio" : "Cosa verrà creato"}</strong><p>{lead ? "Tenant, owner, sede, menu, tema, QR e onboarding verranno creati insieme; la richiesta sarà collegata automaticamente come Convertita." : "Tenant isolato, sede attiva, menu vuoto, tema Editoriale, QR stabile, membership owner e checklist onboarding."}</p></aside>
         <PendingSubmitButton className="button button-dark" pendingLabel="Creazione del ristorante…" disabled={closed}>{lead ? "Conferma e avvia l’onboarding" : "Crea e continua con i materiali"}</PendingSubmitButton>
       </form>

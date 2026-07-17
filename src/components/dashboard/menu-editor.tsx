@@ -10,8 +10,7 @@ import {
   saveMenuItem,
 } from "@/app/dashboard/actions";
 import { PendingSubmitButton } from "@/components/pending-submit-button";
-import { MenuItemMediaUploader, type MenuItemMediaAsset } from "@/components/dashboard/menu-item-media-uploader";
-import { MenuImageGeneration } from "@/components/dashboard/menu-image-generation";
+import type { MenuItemMediaAsset } from "@/components/dashboard/menu-item-media-uploader";
 import { formatCurrency } from "@/lib/format";
 
 type Category = { id: string; name_it: string; slug: string; sort_order: number };
@@ -32,6 +31,9 @@ function OrderControls({ id, type, index, total }: { id: string; type: "category
 }
 
 export function MenuEditor({ menu, categories, items, allergens, itemAllergens, mediaAssets = {} }: { menu: { id: string; name: string }; categories: Category[]; items: Item[]; allergens: Allergen[]; itemAllergens: ItemAllergen[]; mediaAssets?: Record<string, MenuItemMediaAsset> }) {
+  const approvedPhotos = items.filter((item) => Boolean(item.image_url)).length;
+  const reviewPhotos = items.filter((item) => mediaAssets[item.id]?.approval_status === "draft").length;
+  const incompletePhotos = Math.max(0, items.length - approvedPhotos - reviewPhotos);
   return (
     <div className="menu-editor">
       <section className="dashboard-panel category-panel">
@@ -51,12 +53,10 @@ export function MenuEditor({ menu, categories, items, allergens, itemAllergens, 
           );
         })}</ol>
       </section>
-      <MenuImageGeneration items={items.map((item) => ({
-        id: item.id,
-        name: item.name_it,
-        hasImage: Boolean(item.image_url),
-        mediaStatus: mediaAssets[item.id]?.approval_status,
-      }))} />
+      <section className="menu-photo-shortcut">
+        <div><p className="eyebrow">Foto</p><h2>La galleria è separata dall’editor</h2><p>Qui trovi solo il riepilogo: {approvedPhotos} approvate, {reviewPhotos} in revisione e {incompletePhotos} da completare.</p></div>
+        <Link className="button button-light" href="/dashboard/photos">Apri la galleria foto →</Link>
+      </section>
       <section className="dashboard-panel product-panel">
         <div className="panel-heading"><div><p className="eyebrow">Catalogo</p><h2>Piatti, prezzi e ordine</h2></div><span className="count-badge">{items.length}</span></div>
         <p className="panel-intro">Ogni modifica resta in bozza. Usa “Organizza” per spostare o rimuovere un piatto.</p>
@@ -102,12 +102,6 @@ export function MenuEditor({ menu, categories, items, allergens, itemAllergens, 
                     </div>
                   </details>
                 </form>
-                <MenuItemMediaUploader
-                  itemId={item.id}
-                  itemName={item.name_it}
-                  currentImageUrl={item.image_url}
-                  latestAsset={mediaAssets[item.id]}
-                />
                 <footer className="item-structure-bar">
                   <span>Organizza</span>
                   <OrderControls id={item.id} type="item" index={itemIndex} total={categoryItems.length} />

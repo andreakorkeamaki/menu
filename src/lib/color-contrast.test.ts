@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { assessAccentPalette, contrastRatio, formatContrast, resolveAccessibleAccentPalette } from "@/lib/color-contrast";
+import {
+  assessAccentPalette,
+  contrastRatio,
+  formatContrast,
+  resolveAccessibleAccentPalette,
+  resolveAccessibleTextColor,
+} from "@/lib/color-contrast";
 
 describe("theme contrast", () => {
   it("implements the WCAG relative-luminance contrast scale", () => {
@@ -42,5 +48,19 @@ describe("theme contrast", () => {
     expect(result.safe).toBe(true);
     expect(result.adjusted).toBe(true);
     expect(result.accent).toBe("#7f3127");
+  });
+
+  it("replaces legacy light text when both page surfaces are light", () => {
+    const result = resolveAccessibleTextColor({
+      text: "#ece7de",
+      background: "#f4eee4",
+      surface: "#fffaf1",
+    });
+
+    expect(result.safe).toBe(true);
+    expect(result.adjusted).toBe(true);
+    expect(result.text).toBe("#171b18");
+    expect(result.backgroundRatio).toBeGreaterThanOrEqual(4.5);
+    expect(result.surfaceRatio).toBeGreaterThanOrEqual(4.5);
   });
 });

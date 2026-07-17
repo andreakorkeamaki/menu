@@ -13,6 +13,6 @@ describe("safe internal navigation", () => {
     "javascript:alert(1)",
     "dashboard",
   ])("rejects the external or malformed destination %s", (value) => {
-    expect(safeInternalPath(value)).toBe("/dashboard");
+    expect(safeInternalPath(value)).toBe("/access");
   });
 });

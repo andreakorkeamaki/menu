@@ -6,12 +6,15 @@ import {
   createMenuImage,
   MENU_IMAGE_COMPRESSION,
   MENU_IMAGE_FORMAT,
+  MenuImageInstructionsSchema,
   MENU_IMAGE_PROMPT_VERSION,
   MENU_IMAGE_QUALITY,
   MENU_IMAGE_SIZE,
+  menuImagePrompt,
   menuImageSourceFromItem,
   menuImageSourceHash,
 } from "@/lib/ai/menu-image";
+import { getImageModel } from "@/lib/ai/config";
 import { sourceHash } from "@/lib/ai/source-hash";
 import { menuItemMediaObjectPath } from "@/lib/brand-media";
 import {
@@ -25,7 +28,20 @@ import { createClient } from "@/lib/supabase/server";
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
-const RequestSchema = z.object({ item_id: z.uuid() });
+const RequestSchema = z.object({
+  item_id: z.uuid(),
+  instructions: MenuImageInstructionsSchema.optional().default(""),
+  replace_asset_id: z.uuid().nullable().optional(),
+  organization_id: z.uuid().optional(),
+  menu_id: z.uuid().optional(),
+  generation_context: z.enum(["manual", "style_sample", "catalog_regeneration"]).optional().default("manual"),
+  batch_id: z.uuid().nullable().optional(),
+});
+
+const CompletionSchema = z.object({
+  asset_id: z.uuid(),
+  archived_object_path: z.string().nullable(),
+});
 
 function isCrossSite(request: Request) {
   const fetchSite = request.headers.get("sec-fetch-site");
@@ -40,28 +56,28 @@ function publicGenerationError(error: unknown) {
     if (code === "moderation_blocked") {
       return {
         code: "moderation_blocked",
-        message: "Questa descrizione non ha prodotto un’immagine utilizzabile. Controlla il testo del piatto e riprova.",
+        message: "Questa descrizione non ha prodotto un’immagine utilizzabile. Controlla il testo del prodotto e riprova.",
         retryable: false,
       };
     }
     if (error.status === 429) {
       return {
         code: "rate_limited",
-        message: "La coda immagini è temporaneamente piena. Il piatto potrà essere riprovato dal pulsante principale.",
+        message: "La coda immagini è temporaneamente piena. La bozza attuale è rimasta invariata: riprova tra poco.",
         retryable: true,
       };
     }
     if (error.status && error.status >= 500) {
       return {
         code: "provider_unavailable",
-        message: "Il servizio immagini è temporaneamente indisponibile. Riprova tra poco.",
+        message: "Il servizio immagini è temporaneamente indisponibile. La bozza attuale è rimasta invariata.",
         retryable: true,
       };
     }
   }
   return {
     code: "generation_failed",
-    message: "Non è stato possibile generare questa immagine. Potrai riprovarla dal pulsante principale.",
+    message: "Non è stato possibile generare questa immagine. La bozza attuale è rimasta invariata.",
     retryable: true,
   };
 }
@@ -75,7 +91,7 @@ export async function POST(request: Request) {
   try {
     selection = RequestSchema.parse(await request.json());
   } catch {
-    return Response.json({ error: "Piatto non valido." }, { status: 400 });
+    return Response.json({ error: "Prodotto o indicazioni non validi." }, { status: 400 });
   }
 
   const userClient = await createClient();
@@ -86,25 +102,39 @@ export async function POST(request: Request) {
   if (authError || !authData.user) {
     return Response.json({ error: "Sessione non valida." }, { status: 401 });
   }
-  const { data: memberships, error: membershipError } = await userClient
-    .from("memberships")
-    .select("id,organization_id,user_id,role")
-    .eq("user_id", authData.user.id)
-    .in("role", ["owner", "editor"])
-    .order("created_at");
-  if (membershipError) {
-    return Response.json({ error: "Organizzazione non disponibile." }, { status: 500 });
-  }
-  const cookieStore = await cookies();
-  const membership = selectMembership(
-    memberships ?? [],
-    cookieStore.get(ACTIVE_ORGANIZATION_COOKIE)?.value,
-  );
-  if (!membership) {
-    return Response.json({ error: "Nessuna organizzazione modificabile." }, { status: 403 });
+
+  const [membershipResult, operatorResult] = await Promise.all([
+    userClient.from("memberships")
+      .select("id,organization_id,user_id,role")
+      .eq("user_id", authData.user.id)
+      .in("role", ["owner", "editor"])
+      .order("created_at"),
+    userClient.from("platform_staff")
+      .select("user_id")
+      .eq("user_id", authData.user.id)
+      .eq("active", true)
+      .maybeSingle(),
+  ]);
+  if (membershipResult.error || operatorResult.error) {
+    return Response.json({ error: "Autorizzazione non disponibile." }, { status: 500 });
   }
 
-  const organizationId = membership.organization_id;
+  const cookieStore = await cookies();
+  const membership = selectMembership(
+    membershipResult.data ?? [],
+    cookieStore.get(ACTIVE_ORGANIZATION_COOKIE)?.value,
+  );
+  const isOperator = Boolean(operatorResult.data);
+  const organizationId = isOperator && selection.organization_id
+    ? selection.organization_id
+    : membership?.organization_id;
+  if (
+    !organizationId
+    || (selection.organization_id && selection.organization_id !== organizationId)
+  ) {
+    return Response.json({ error: "Organizzazione non modificabile." }, { status: 403 });
+  }
+
   const { data: item, error: itemError } = await userClient
     .from("menu_items")
     .select("id,category_id,name_it,description_it,ingredients_it,vegetarian,vegan,gluten_free,image_url")
@@ -112,13 +142,7 @@ export async function POST(request: Request) {
     .eq("organization_id", organizationId)
     .maybeSingle();
   if (itemError || !item) {
-    return Response.json({ error: "Il piatto non è più disponibile." }, { status: 404 });
-  }
-  if (item.image_url) {
-    return Response.json({
-      code: "already_has_image",
-      error: "Il piatto ha già un’immagine approvata.",
-    }, { status: 409 });
+    return Response.json({ error: "Il prodotto non è più disponibile." }, { status: 404 });
   }
   const { data: category, error: categoryError } = await userClient
     .from("menu_categories")
@@ -126,37 +150,67 @@ export async function POST(request: Request) {
     .eq("id", item.category_id)
     .eq("organization_id", organizationId)
     .maybeSingle();
-  if (categoryError || !category) {
-    return Response.json({ error: "La categoria del piatto non è disponibile." }, { status: 409 });
+  if (
+    categoryError
+    || !category
+    || (selection.menu_id && selection.menu_id !== category.menu_id)
+  ) {
+    return Response.json({ error: "La categoria o il menu del prodotto non sono disponibili." }, { status: 409 });
   }
 
   const admin = createAdminClient();
-  const { data: pendingAsset, error: pendingError } = await admin
+  const { data: replacement, error: replacementError } = selection.replace_asset_id
+    ? await userClient.from("media_assets")
+      .select("id,organization_id,menu_id,menu_item_id,ai_job_id,bucket_id,object_path,approval_status,is_public")
+      .eq("id", selection.replace_asset_id)
+      .eq("organization_id", organizationId)
+      .eq("menu_id", category.menu_id)
+      .eq("menu_item_id", item.id)
+      .eq("media_kind", "menu_item")
+      .maybeSingle()
+    : { data: null, error: null };
+  if (replacementError || (selection.replace_asset_id && !replacement)) {
+    return Response.json({ error: "La bozza da rigenerare non appartiene a questo prodotto." }, { status: 409 });
+  }
+  const { data: pendingAssets, error: pendingError } = await admin
     .from("media_assets")
     .select("id")
     .eq("organization_id", organizationId)
+    .eq("menu_id", category.menu_id)
     .eq("menu_item_id", item.id)
     .eq("media_kind", "menu_item")
     .eq("approval_status", "draft")
     .eq("is_public", false)
-    .limit(1)
-    .maybeSingle();
+    .is("superseded_at", null)
+    .limit(2);
   if (pendingError) {
     return Response.json({ error: "Impossibile verificare la coda immagini." }, { status: 500 });
   }
-  if (pendingAsset) {
+  if ((pendingAssets ?? []).some((asset) => asset.id !== replacement?.id)) {
     return Response.json({
       code: "already_in_review",
-      error: "Un’immagine per questo piatto è già in revisione.",
+      error: "Esiste già un’altra immagine in revisione per questo prodotto.",
+    }, { status: 409 });
+  }
+  if (!replacement && pendingAssets?.length) {
+    return Response.json({
+      code: "already_in_review",
+      error: "Un’immagine per questo prodotto è già in revisione.",
     }, { status: 409 });
   }
 
   const source = menuImageSourceFromItem(item, category.name_it);
   const sourceDigest = menuImageSourceHash(source);
+  const prompt = menuImagePrompt(source, selection.instructions);
+  const promptDigest = sourceHash(prompt);
   const requestKey = sourceHash(JSON.stringify({
     organization_id: organizationId,
+    menu_id: category.menu_id,
+    item_id: item.id,
     source_hash: sourceDigest,
+    prompt_hash: promptDigest,
     prompt_version: MENU_IMAGE_PROMPT_VERSION,
+    source_asset_id: replacement?.id ?? null,
     quality: MENU_IMAGE_QUALITY,
     size: MENU_IMAGE_SIZE,
   }));
@@ -165,6 +219,7 @@ export async function POST(request: Request) {
     .from("ai_jobs")
     .select("id")
     .eq("organization_id", organizationId)
+    .eq("menu_id", category.menu_id)
     .eq("kind", "image_generation")
     .contains("input", { item_id: item.id, request_key: requestKey })
     .in("status", ["pending", "queued", "running"])
@@ -177,7 +232,7 @@ export async function POST(request: Request) {
   if (activeJob) {
     return Response.json({
       code: "already_running",
-      error: "La generazione di questo piatto è già in corso.",
+      error: "La generazione di questo prodotto è già in corso.",
     }, { status: 409 });
   }
 
@@ -187,7 +242,7 @@ export async function POST(request: Request) {
     menu_id: category.menu_id,
     kind: "image_generation",
     job_type: "image_generation",
-    model: process.env.OPENAI_IMAGE_MODEL?.trim() || "gpt-image-2",
+    model: getImageModel(),
     prompt_version: MENU_IMAGE_PROMPT_VERSION,
     status: "running",
     attempts: 1,
@@ -195,7 +250,24 @@ export async function POST(request: Request) {
       item_id: item.id,
       request_key: requestKey,
       source_hash: sourceDigest,
+      prompt_hash: promptDigest,
       source,
+      prompt,
+      visual_instructions: selection.instructions || null,
+      generation_context: selection.generation_context,
+      batch_id: selection.batch_id ?? null,
+      provenance: {
+        type: replacement
+          ? "regeneration"
+          : item.image_url
+            ? "regeneration_from_current_attachment"
+            : "initial_generation",
+        source_asset_id: replacement?.id ?? null,
+        source_ai_job_id: replacement?.ai_job_id ?? null,
+        source_image_present: Boolean(item.image_url),
+        workflow: selection.generation_context,
+        batch_id: selection.batch_id ?? null,
+      },
       quality: MENU_IMAGE_QUALITY,
       size: MENU_IMAGE_SIZE,
       output_format: MENU_IMAGE_FORMAT,
@@ -209,9 +281,9 @@ export async function POST(request: Request) {
   }
 
   let objectPath: string | null = null;
-  let assetId: string | null = null;
+  let completionCommitted = false;
   try {
-    const generated = await createMenuImage(source);
+    const generated = await createMenuImage(source, { instructions: selection.instructions });
     const [{ data: currentItem }, { data: currentCategory }] = await Promise.all([
       admin.from("menu_items")
         .select("id,name_it,description_it,ingredients_it,vegetarian,vegan,gluten_free")
@@ -229,7 +301,7 @@ export async function POST(request: Request) {
       || !currentCategory
       || menuImageSourceHash(menuImageSourceFromItem(currentItem, currentCategory.name_it)) !== sourceDigest
     ) {
-      throw new Error("Il testo del piatto è cambiato durante la generazione.");
+      throw new Error("Il testo del prodotto è cambiato durante la generazione.");
     }
 
     objectPath = menuItemMediaObjectPath(
@@ -245,57 +317,49 @@ export async function POST(request: Request) {
     );
     if (uploadError) throw new Error("Salvataggio privato dell’immagine non riuscito.");
 
-    const { data: asset, error: assetError } = await admin.from("media_assets").insert({
-      organization_id: organizationId,
-      menu_id: category.menu_id,
-      menu_item_id: item.id,
-      ai_job_id: job.id,
-      bucket_id: "intake",
-      object_path: objectPath,
-      media_kind: "menu_item",
-      mime_type: "image/webp",
-      alt_text: item.name_it,
-      approval_status: "draft",
-      is_public: false,
-      created_by: authData.user.id,
-    }).select("id").single();
-    if (assetError || !asset) throw new Error("Registrazione della bozza immagine non riuscita.");
-    assetId = asset.id;
-
-    const { data: completedJob, error: completionError } = await admin.from("ai_jobs").update({
-      model: generated.model,
-      response_id: generated.requestId,
-      status: "completed",
-      output: {
-        asset_id: asset.id,
-        storage_bucket: "intake",
-        storage_path: objectPath,
-        mime_type: "image/webp",
+    const { data: completion, error: completionError } = await userClient.rpc(
+      "complete_menu_image_generation",
+      {
+        p_job_id: job.id,
+        p_organization_id: organizationId,
+        p_menu_id: category.menu_id,
+        p_menu_item_id: item.id,
+        p_replaces_asset_id: replacement?.id ?? null,
+        p_object_path: objectPath,
+        p_mime_type: "image/webp",
+        p_alt_text: item.name_it,
+        p_model: generated.model,
+        p_response_id: generated.requestId,
+        p_usage: generated.usage ?? null,
       },
-      usage: generated.usage,
-      completed_at: new Date().toISOString(),
-    }).eq("id", job.id).eq("organization_id", organizationId).eq("status", "running")
-      .select("id")
-      .maybeSingle();
-    if (completionError || !completedJob) {
-      throw new Error("Completamento del job immagine non riuscito.");
+    );
+    const completed = CompletionSchema.safeParse(completion);
+    if (completionError || !completed.success) {
+      throw new Error("Completamento atomico della nuova bozza non riuscito.");
+    }
+    completionCommitted = true;
+
+    if (completed.data.archived_object_path) {
+      const { error: archiveCleanupError } = await admin.storage
+        .from("intake")
+        .remove([completed.data.archived_object_path]);
+      if (archiveCleanupError) {
+        reportServerError("menu_image_archived_source_cleanup_failed", archiveCleanupError);
+      }
     }
 
     const { data: preview } = await admin.storage.from("intake").createSignedUrl(objectPath, 15 * 60);
     return NextResponse.json({
       item_id: item.id,
-      asset_id: asset.id,
+      asset_id: completed.data.asset_id,
+      replaced_asset_id: replacement?.id ?? null,
       preview_url: preview?.signedUrl ?? null,
       status: "in_review",
     });
   } catch (error) {
-    if (assetId) {
-      await admin.from("media_assets")
-        .delete()
-        .eq("id", assetId)
-        .eq("organization_id", organizationId);
+    if (objectPath && !completionCommitted) {
+      await admin.storage.from("intake").remove([objectPath]);
     }
-    if (objectPath) await admin.storage.from("intake").remove([objectPath]);
 
     const providerError = publicGenerationError(error);
     const reference = reportServerError("menu_image_generation_failed", error);
@@ -304,17 +368,20 @@ export async function POST(request: Request) {
       ? error.code
       : null;
     const requestId = error instanceof OpenAI.APIError ? error.requestID : null;
-    await admin.from("ai_jobs").update({
-      response_id: requestId,
-      status: "failed",
-      error: {
-        code: providerCode ?? providerError.code,
-        provider_status: providerStatus,
-        reference,
-        retryable: providerError.retryable,
-      },
-      completed_at: new Date().toISOString(),
-    }).eq("id", job.id).eq("organization_id", organizationId);
+    if (!completionCommitted) {
+      await admin.from("ai_jobs").update({
+        response_id: requestId,
+        status: "failed",
+        error: {
+          code: providerCode ?? providerError.code,
+          provider_status: providerStatus,
+          reference,
+          retryable: providerError.retryable,
+          previous_asset_preserved: Boolean(replacement),
+        },
+        completed_at: new Date().toISOString(),
+      }).eq("id", job.id).eq("organization_id", organizationId).eq("status", "running");
+    }
 
     return Response.json({
       code: providerError.code,

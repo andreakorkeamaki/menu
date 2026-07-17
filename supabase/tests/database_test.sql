@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(156);
+select plan(167);
 
 select has_table('public', 'menus', 'draft menus table exists');
 select has_table('public', 'menu_publications', 'publication snapshot table exists');
@@ -14,6 +14,8 @@ select has_table('private', 'public_form_events', 'privacy-minimized intake tele
 select has_view('public', 'latest_menu_item_media_assets', 'dish editor has an RLS-aware latest-media view');
 select has_column('public', 'media_assets', 'menu_item_id', 'dish media has an explicit normalized target');
 select has_column('public', 'media_assets', 'ai_job_id', 'generated media records its originating AI job');
+select has_column('public', 'media_assets', 'supersedes_asset_id', 'regenerated media records the previous asset');
+select has_column('public', 'media_assets', 'superseded_at', 'private drafts can be archived after successful replacement');
 select is(
   (
     select count(*)
@@ -74,6 +76,11 @@ select has_function(
   'public', 'review_brand_media',
   array['uuid', 'uuid', 'text', 'text', 'text'],
   'brand media review has an operator-only promotion RPC'
+);
+select has_function(
+  'public', 'complete_menu_image_generation',
+  array['uuid', 'uuid', 'uuid', 'uuid', 'uuid', 'text', 'text', 'text', 'text', 'text', 'jsonb'],
+  'image generation completion is an atomic tenant-scoped RPC'
 );
 select has_function(
   'public', 'submit_demo_request',
@@ -1319,6 +1326,130 @@ select is(
   (select approval_status::text from public.media_assets where id = '00000000-0000-0000-0000-0000000000f2'),
   'rejected',
   'rejected brand media remains non-public for audit history'
+);
+
+insert into public.ai_jobs (
+  id, organization_id, menu_id, kind, job_type, model, prompt_version,
+  status, attempts, input, started_at, created_by
+) values (
+  '00000000-0000-0000-0000-0000000000a3',
+  '00000000-0000-0000-0000-000000000001',
+  '00000000-0000-0000-0000-000000000021',
+  'image_generation', 'image_generation', 'gpt-image-2', 'menu-image-v2',
+  'running', 1,
+  '{"item_id":"00000000-0000-0000-0000-000000000041","source_hash":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","prompt_hash":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","prompt":"Photorealistic menu product","source":{"item_id":"00000000-0000-0000-0000-000000000041","name":"Crescentine aggiornate","category":"Per cominciare","description":"Descrizione aggiornata","ingredients":"Farina e latte","vegetarian":true,"vegan":false,"gluten_free":false},"visual_instructions":"Più naturale","provenance":{"type":"regeneration","source_asset_id":"00000000-0000-0000-0000-0000000000f4"}}'::jsonb,
+  now(),
+  '10000000-0000-0000-0000-000000000001'
+);
+insert into public.media_assets (
+  id, organization_id, menu_id, menu_item_id, bucket_id, object_path,
+  media_kind, mime_type, alt_text, approval_status, is_public, created_by
+) values (
+  '00000000-0000-0000-0000-0000000000f4',
+  '00000000-0000-0000-0000-000000000001',
+  '00000000-0000-0000-0000-000000000021',
+  '00000000-0000-0000-0000-000000000041',
+  'intake',
+  '00000000-0000-0000-0000-000000000001/menu-items/00000000-0000-0000-0000-000000000041/old.webp',
+  'menu_item', 'image/webp', 'Vecchia bozza', 'draft', false,
+  '10000000-0000-0000-0000-000000000001'
+);
+
+select set_config('request.jwt.claim.sub', '10000000-0000-0000-0000-000000000021', true);
+select set_config('request.jwt.claims', '{"sub":"10000000-0000-0000-0000-000000000021","role":"authenticated"}', true);
+select throws_ok(
+  $$
+    select public.complete_menu_image_generation(
+      '00000000-0000-0000-0000-0000000000a3',
+      '00000000-0000-0000-0000-000000000001',
+      '00000000-0000-0000-0000-000000000021',
+      '00000000-0000-0000-0000-000000000041',
+      '00000000-0000-0000-0000-0000000000f4',
+      '00000000-0000-0000-0000-000000000001/menu-items/00000000-0000-0000-0000-000000000041/00000000-0000-0000-0000-0000000000f5.webp',
+      'image/webp', 'Crescentine', 'gpt-image-2', 'resp-image-cross', '{}'::jsonb
+    )
+  $$,
+  null,
+  null,
+  'another tenant cannot complete or replace a generated media job'
+);
+
+select set_config('request.jwt.claim.sub', '10000000-0000-0000-0000-000000000001', true);
+select set_config('request.jwt.claims', '{"sub":"10000000-0000-0000-0000-000000000001","role":"authenticated"}', true);
+update public.menu_items
+set description_it = 'Testo cambiato durante la generazione'
+where id = '00000000-0000-0000-0000-000000000041';
+select throws_ok(
+  $$
+    select public.complete_menu_image_generation(
+      '00000000-0000-0000-0000-0000000000a3',
+      '00000000-0000-0000-0000-000000000001',
+      '00000000-0000-0000-0000-000000000021',
+      '00000000-0000-0000-0000-000000000041',
+      '00000000-0000-0000-0000-0000000000f4',
+      '00000000-0000-0000-0000-000000000001/menu-items/00000000-0000-0000-0000-000000000041/00000000-0000-0000-0000-0000000000f5.webp',
+      'image/webp', 'Crescentine', 'gpt-image-2', 'resp-image-stale', '{}'::jsonb
+    )
+  $$,
+  null,
+  null,
+  'a source edit racing generation cannot archive the previous draft'
+);
+select is(
+  (select approval_status::text from public.media_assets where id = '00000000-0000-0000-0000-0000000000f4'),
+  'draft',
+  'the previous private draft remains reviewable after a stale completion attempt'
+);
+update public.menu_items
+set description_it = 'Descrizione aggiornata'
+where id = '00000000-0000-0000-0000-000000000041';
+select lives_ok(
+  $$
+    select public.complete_menu_image_generation(
+      '00000000-0000-0000-0000-0000000000a3',
+      '00000000-0000-0000-0000-000000000001',
+      '00000000-0000-0000-0000-000000000021',
+      '00000000-0000-0000-0000-000000000041',
+      '00000000-0000-0000-0000-0000000000f4',
+      '00000000-0000-0000-0000-000000000001/menu-items/00000000-0000-0000-0000-000000000041/00000000-0000-0000-0000-0000000000f5.webp',
+      'image/webp', 'Crescentine', 'gpt-image-2', 'resp-image-3', '{"total_tokens":123}'::jsonb
+    )
+  $$,
+  'a successful generation atomically replaces the selected private draft'
+);
+select is(
+  (
+    select approval_status::text || ':' || (superseded_at is not null)::text
+    from public.media_assets where id = '00000000-0000-0000-0000-0000000000f4'
+  ),
+  'rejected:true',
+  'the previous private draft is archived only after successful completion'
+);
+select is(
+  (
+    select supersedes_asset_id
+    from public.media_assets
+    where ai_job_id = '00000000-0000-0000-0000-0000000000a3'
+  ),
+  '00000000-0000-0000-0000-0000000000f4'::uuid,
+  'the generated asset keeps exact replacement provenance'
+);
+select is(
+  (
+    select supersedes_asset_id
+    from public.latest_menu_item_media_assets
+    where menu_item_id = '00000000-0000-0000-0000-000000000041'
+  ),
+  '00000000-0000-0000-0000-0000000000f4'::uuid,
+  'the latest-media view excludes the archived private draft'
+);
+select is(
+  (
+    select status::text || ':' || (input ->> 'prompt_hash') || ':' || (input ->> 'visual_instructions')
+    from public.ai_jobs where id = '00000000-0000-0000-0000-0000000000a3'
+  ),
+  'completed:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb:Più naturale',
+  'the completed job retains prompt hash and reviewer instructions'
 );
 
 set local role anon;

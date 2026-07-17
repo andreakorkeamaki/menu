@@ -7,7 +7,6 @@ import { requireOperator } from "@/lib/auth";
 import { resolveOwnerAuthUser } from "@/lib/auth-admin";
 import { getAiModelSettings } from "@/lib/ai/config";
 import { MENU_IMPORT_PROMPT_VERSION } from "@/lib/ai/menu-import";
-import { menuImageSourceFromItem, menuImageSourceHash } from "@/lib/ai/menu-image";
 import { MenuImportStagingSchema } from "@/lib/ai/schemas";
 import { classifyMenuImportSource } from "@/lib/import/source";
 import { ImportRetryClaimSchema, validatedRetrySource } from "@/lib/import/recovery";
@@ -15,10 +14,10 @@ import { runMenuImport } from "@/lib/import/run-menu-import";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { normalizeSlug } from "@/lib/slug";
+import { isAllowlistedOperatorEmail } from "@/lib/operator-access";
 import { DEMO_REQUEST_STATUSES } from "@/lib/demo-request";
-import { brandMediaObjectPath, detectBrandImageMime, menuItemMediaObjectPath } from "@/lib/brand-media";
-import { MediaProcessingError, preparePublicMedia } from "@/lib/media-processing";
-import { mediaReviewHref, parseMediaReviewPage } from "@/lib/media-review-pagination";
+import { MediaReviewError, reviewMediaAsset } from "@/lib/media-review";
+import { mediaReviewHref, parseMediaReviewContext, parseMediaReviewPage } from "@/lib/media-review-pagination";
 import { leadListHref, parseLeadPage } from "@/lib/lead-list";
 import { reportServerError } from "@/lib/server-telemetry";
 
@@ -54,7 +53,8 @@ export async function updateDemoRequestStatus(formData: FormData) {
 export async function reviewBrandMedia(formData: FormData) {
   await requireOperator();
   const returnPage = parseMediaReviewPage(formData.get("return_page")?.toString());
-  const mediaRedirect = (result: { reviewed?: "approved" | "rejected"; error?: string }) => mediaReviewHref(returnPage, result);
+  const returnContext = parseMediaReviewContext(formData.get("return_context")?.toString());
+  const mediaRedirect = (result: { reviewed?: "approved" | "rejected"; error?: string }) => mediaReviewHref(returnPage, { ...result, context: returnContext?.value });
   const parsed = z.object({
     asset_id: z.uuid(),
     organization_id: z.uuid(),
@@ -63,128 +63,25 @@ export async function reviewBrandMedia(formData: FormData) {
   if (!parsed.success) redirect(mediaRedirect({ error: "invalid" }));
 
   const supabase = await createClient();
-  const { data: asset, error: assetError } = await supabase!.from("media_assets")
-    .select("id,organization_id,location_id,menu_id,menu_item_id,ai_job_id,bucket_id,object_path,media_kind,mime_type,approval_status,is_public")
-    .eq("id", parsed.data.asset_id)
-    .eq("organization_id", parsed.data.organization_id)
-    .maybeSingle();
-  if (
-    assetError
-    || !asset
-    || asset.bucket_id !== "intake"
-    || asset.approval_status !== "draft"
-    || asset.is_public
-    || !["logo", "cover", "menu_item"].includes(asset.media_kind)
-    || (asset.media_kind === "menu_item" && (!asset.menu_id || !asset.menu_item_id))
-  ) redirect(mediaRedirect({ error: "not-reviewable" }));
-
-  const admin = createAdminClient();
-  if (asset.ai_job_id && parsed.data.action === "approve") {
-    const [{ data: job, error: generatedJobError }, { data: currentItem, error: generatedItemError }] = await Promise.all([
-      admin.from("ai_jobs")
-        .select("id,kind,status,input")
-        .eq("id", asset.ai_job_id)
-        .eq("organization_id", asset.organization_id)
-        .maybeSingle(),
-      admin.from("menu_items")
-        .select("id,category_id,name_it,description_it,ingredients_it,vegetarian,vegan,gluten_free")
-        .eq("id", asset.menu_item_id!)
-        .eq("organization_id", asset.organization_id)
-        .maybeSingle(),
-    ]);
-    if (
-      generatedJobError
-      || generatedItemError
-      || !job
-      || !currentItem
-      || job.kind !== "image_generation"
-      || job.status !== "completed"
-      || typeof job.input !== "object"
-      || job.input === null
-      || (job.input as Record<string, unknown>).item_id !== asset.menu_item_id
-      || typeof (job.input as Record<string, unknown>).source_hash !== "string"
-    ) redirect(mediaRedirect({ error: "generated-source" }));
-
-    const { data: currentCategory, error: generatedCategoryError } = await admin.from("menu_categories")
-      .select("id,name_it")
-      .eq("id", currentItem.category_id)
-      .eq("organization_id", asset.organization_id)
-      .maybeSingle();
-    if (generatedCategoryError || !currentCategory) {
-      redirect(mediaRedirect({ error: "generated-source" }));
-    }
-    const currentSourceHash = menuImageSourceHash(
-      menuImageSourceFromItem(currentItem, currentCategory.name_it),
-    );
-    if (currentSourceHash !== (job.input as Record<string, unknown>).source_hash) {
-      redirect(mediaRedirect({ error: "generated-stale" }));
-    }
-  }
-
-  if (parsed.data.action === "reject") {
-    const { error } = await supabase!.rpc("review_brand_media", {
-      p_asset_id: asset.id,
-      p_organization_id: asset.organization_id,
-      p_action: "reject",
-      p_public_path: null,
-      p_public_url: null,
-    });
-    if (error) redirect(mediaRedirect({ error: "review" }));
-    await admin.storage.from("intake").remove([asset.object_path]);
-    revalidatePath("/ops/media");
-    revalidatePath("/dashboard/site");
-    revalidatePath("/dashboard/menu");
-    redirect(mediaRedirect({ reviewed: "rejected" }));
-  }
-
-  const { data: source, error: downloadError } = await admin.storage.from("intake").download(asset.object_path);
-  if (downloadError || !source) redirect(mediaRedirect({ error: "source" }));
-  const detectedMime = detectBrandImageMime(new Uint8Array(await source.slice(0, 12).arrayBuffer()));
-  if (!detectedMime || asset.mime_type !== detectedMime) redirect(mediaRedirect({ error: "unsafe-source" }));
-
-  let prepared: Awaited<ReturnType<typeof preparePublicMedia>>;
   try {
-    prepared = await preparePublicMedia(
-      Buffer.from(await source.arrayBuffer()),
-      asset.media_kind as "logo" | "cover" | "menu_item",
-    );
+    await reviewMediaAsset({
+      assetId: parsed.data.asset_id,
+      organizationId: parsed.data.organization_id,
+      action: parsed.data.action,
+      operatorClient: supabase!,
+    });
   } catch (error) {
-    if (error instanceof MediaProcessingError && error.reason === "dimensions") {
-      redirect(mediaRedirect({ error: "dimensions" }));
-    }
-    redirect(mediaRedirect({ error: "unsafe-source" }));
+    if (error instanceof MediaReviewError) redirect(mediaRedirect({ error: error.code }));
+    throw error;
   }
-
-  const publicPath = asset.media_kind === "menu_item"
-    ? menuItemMediaObjectPath(asset.organization_id, asset.menu_item_id!, crypto.randomUUID(), prepared.mime)
-    : brandMediaObjectPath(asset.organization_id, asset.media_kind, crypto.randomUUID(), prepared.mime);
-  const { error: uploadError } = await admin.storage.from("public-media").upload(publicPath, prepared.data, {
-    contentType: prepared.mime,
-    cacheControl: "31536000",
-    upsert: false,
-  });
-  if (uploadError) redirect(mediaRedirect({ error: "promote" }));
-  const { data: publicData } = admin.storage.from("public-media").getPublicUrl(publicPath);
-
-  const { error: reviewError } = await supabase!.rpc("review_brand_media", {
-    p_asset_id: asset.id,
-    p_organization_id: asset.organization_id,
-    p_action: "approve",
-    p_public_path: publicPath,
-    p_public_url: publicData.publicUrl,
-  });
-  if (reviewError) {
-    await admin.storage.from("public-media").remove([publicPath]);
-    redirect(mediaRedirect({ error: "review" }));
-  }
-  await admin.storage.from("intake").remove([asset.object_path]);
 
   revalidatePath("/ops/media");
   revalidatePath("/dashboard/site");
   revalidatePath("/dashboard/menu");
+  revalidatePath("/dashboard/photos");
   revalidatePath("/dashboard/menu/preview");
   revalidatePath("/dashboard/menu/review");
-  redirect(mediaRedirect({ reviewed: "approved" }));
+  redirect(mediaRedirect({ reviewed: parsed.data.action === "approve" ? "approved" : "rejected" }));
 }
 
 export async function provisionOrganization(formData: FormData) {
@@ -200,6 +97,9 @@ export async function provisionOrganization(formData: FormData) {
     contact_name: z.string().trim().max(160).optional(),
   }).safeParse(Object.fromEntries(formData));
   if (!parsed.success) redirect(`/ops/new?error=invalid${leadSuffix}`);
+  if (isAllowlistedOperatorEmail(parsed.data.owner_email)) {
+    redirect(`/ops/new?error=operator-owner${leadSuffix}`);
+  }
   const admin = createAdminClient();
   const origin = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
   let owner: Awaited<ReturnType<typeof resolveOwnerAuthUser>>;
@@ -214,6 +114,19 @@ export async function provisionOrganization(formData: FormData) {
     });
   } catch {
     redirect(`/ops/new?error=invite${leadSuffix}`);
+  }
+  const { data: platformOwner, error: platformOwnerError } = await admin.from("platform_staff")
+    .select("user_id")
+    .eq("user_id", owner.user.id)
+    .eq("active", true)
+    .maybeSingle();
+  if (platformOwnerError) {
+    if (owner.invitation === "sent") await admin.auth.admin.deleteUser(owner.user.id);
+    redirect(`/ops/new?error=invite${leadSuffix}`);
+  }
+  if (platformOwner) {
+    if (owner.invitation === "sent") await admin.auth.admin.deleteUser(owner.user.id);
+    redirect(`/ops/new?error=operator-owner${leadSuffix}`);
   }
   const supabase = await createClient();
   const { data, error } = await supabase!.rpc("provision_restaurant", {
@@ -245,6 +158,104 @@ export async function provisionOrganization(formData: FormData) {
   revalidatePath("/ops");
   revalidatePath("/ops/leads");
   redirect(`/ops/import?case=${result.data.onboarding_case_id}&provisioned=${result.data.created ? "1" : "existing"}&invitation=${owner.invitation}&qr=${encodeURIComponent(result.data.qr_code)}${demoRequestId.success ? "&lead_converted=1" : ""}`);
+}
+
+export async function assignRestaurantOwner(formData: FormData) {
+  const context = await requireOperator();
+  const organizationId = z.uuid().safeParse(formData.get("organization_id"));
+  if (!organizationId.success) redirect("/ops/restaurants?error=invalid-owner");
+  const destination = `/ops/restaurants/${organizationId.data}`;
+  const parsed = z.object({
+    email: z.email(),
+    full_name: z.string().trim().min(2).max(160),
+  }).safeParse(Object.fromEntries(formData));
+  if (!parsed.success) redirect(`${destination}?error=invalid-owner`);
+  if (isAllowlistedOperatorEmail(parsed.data.email)) {
+    redirect(`${destination}?error=operator-owner`);
+  }
+
+  const supabase = await createClient();
+  const { data: organization, error: organizationError } = await supabase!.from("organizations")
+    .select("id")
+    .eq("id", organizationId.data)
+    .maybeSingle();
+  if (organizationError || !organization) redirect(`${destination}?error=organization`);
+
+  const admin = createAdminClient();
+  const origin = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
+  let owner: Awaited<ReturnType<typeof resolveOwnerAuthUser>>;
+  try {
+    const callback = new URL("/auth/callback", origin);
+    callback.searchParams.set("next", "/login/reset-password?mode=invite");
+    owner = await resolveOwnerAuthUser({
+      admin,
+      email: parsed.data.email,
+      fullName: parsed.data.full_name,
+      redirectTo: callback.toString(),
+    });
+  } catch {
+    redirect(`${destination}?error=invite`);
+  }
+
+  const { data: operatorOwner, error: operatorOwnerError } = await admin.from("platform_staff")
+    .select("user_id")
+    .eq("user_id", owner.user.id)
+    .eq("active", true)
+    .maybeSingle();
+  if (operatorOwnerError) {
+    if (owner.invitation === "sent") await admin.auth.admin.deleteUser(owner.user.id);
+    redirect(`${destination}?error=invite`);
+  }
+  if (operatorOwner) {
+    if (owner.invitation === "sent") await admin.auth.admin.deleteUser(owner.user.id);
+    redirect(`${destination}?error=operator-owner`);
+  }
+
+  const { data: membership, error: membershipError } = await supabase!.from("memberships").upsert({
+    organization_id: organization.id,
+    user_id: owner.user.id,
+    role: "owner",
+    created_by: context.profile.id,
+  }, { onConflict: "organization_id,user_id" }).select("id").single();
+  if (membershipError || !membership) {
+    if (owner.invitation === "sent") await admin.auth.admin.deleteUser(owner.user.id);
+    redirect(`${destination}?error=membership`);
+  }
+
+  // Once a distinct owner exists, remove the current operator's legacy tenant
+  // membership. Platform operations remain authorized through platform_staff.
+  let cleanup = "not-needed";
+  if (owner.user.id !== context.profile.id) {
+    const { data: removedMemberships, error: cleanupError } = await supabase!.from("memberships")
+      .delete()
+      .eq("organization_id", organization.id)
+      .eq("user_id", context.profile.id)
+      .select("id");
+    if (cleanupError) {
+      cleanup = "retained";
+      reportServerError("operator_legacy_membership_cleanup_failed", cleanupError);
+    } else {
+      cleanup = removedMemberships.length ? "removed" : "not-needed";
+    }
+  }
+
+  const { error: auditError } = await admin.from("audit_logs").insert({
+    organization_id: organization.id,
+    actor_user_id: context.profile.id,
+    action: "membership.operator_owner_assigned",
+    entity_type: "membership",
+    entity_id: membership.id,
+    changed_fields: ["access", "role"],
+    context: {
+      invitation: owner.invitation,
+      operator_membership_cleanup: cleanup,
+    },
+  });
+  if (auditError) reportServerError("operator_owner_assignment_audit_failed", auditError);
+
+  revalidatePath("/ops/restaurants");
+  revalidatePath(destination);
+  redirect(`${destination}?owner=${owner.invitation}&cleanup=${cleanup}`);
 }
 
 async function markMenuImportFailed(input: {

@@ -352,16 +352,16 @@ export async function uploadMenuItemMedia(formData: FormData) {
   }).safeParse(Object.fromEntries(formData));
   const file = formData.get("file");
   if (!parsed.success || !(file instanceof File) || file.size === 0) {
-    redirect("/dashboard/menu?media_error=invalid");
+    redirect("/dashboard/photos?media_error=invalid");
   }
   if (file.size > MENU_ITEM_MEDIA_MAX_BYTES) {
-    redirect("/dashboard/menu?media_error=too-large");
+    redirect("/dashboard/photos?media_error=too-large");
   }
 
   const header = new Uint8Array(await file.slice(0, 12).arrayBuffer());
   const detectedMime = detectBrandImageMime(header);
   if (!detectedMime || file.type !== detectedMime) {
-    redirect("/dashboard/menu?media_error=type");
+    redirect("/dashboard/photos?media_error=type");
   }
 
   const supabase = await createClient();
@@ -370,13 +370,13 @@ export async function uploadMenuItemMedia(formData: FormData) {
     .eq("id", parsed.data.item_id)
     .eq("organization_id", membership.organization_id)
     .maybeSingle();
-  if (itemError || !item) redirect("/dashboard/menu?media_error=item");
+  if (itemError || !item) redirect("/dashboard/photos?media_error=item");
   const { data: category, error: categoryError } = await supabase!.from("menu_categories")
     .select("menu_id")
     .eq("id", item.category_id)
     .eq("organization_id", membership.organization_id)
     .maybeSingle();
-  if (categoryError || !category) redirect("/dashboard/menu?media_error=item");
+  if (categoryError || !category) redirect("/dashboard/photos?media_error=item");
 
   const objectPath = menuItemMediaObjectPath(
     membership.organization_id,
@@ -389,7 +389,7 @@ export async function uploadMenuItemMedia(formData: FormData) {
     cacheControl: "3600",
     upsert: false,
   });
-  if (uploadError) redirect("/dashboard/menu?media_error=upload");
+  if (uploadError) redirect("/dashboard/photos?media_error=upload");
 
   const { error: metadataError } = await supabase!.from("media_assets").insert({
     organization_id: membership.organization_id,
@@ -406,18 +406,19 @@ export async function uploadMenuItemMedia(formData: FormData) {
   });
   if (metadataError) {
     await supabase!.storage.from("intake").remove([objectPath]);
-    redirect("/dashboard/menu?media_error=metadata");
+    redirect("/dashboard/photos?media_error=metadata");
   }
 
   revalidatePath("/dashboard/menu");
+  revalidatePath("/dashboard/photos");
   revalidatePath("/ops/media");
-  redirect(`/dashboard/menu?media_uploaded=${item.id}`);
+  redirect(`/dashboard/photos?media_uploaded=${item.id}`);
 }
 
 export async function deleteMenuItemMedia(formData: FormData) {
   const { membership } = await requireMembership();
   const assetId = uuid.safeParse(formData.get("asset_id"));
-  if (!assetId.success) redirect("/dashboard/menu?media_error=invalid");
+  if (!assetId.success) redirect("/dashboard/photos?media_error=invalid");
   const supabase = await createClient();
   const { data: asset } = await supabase!.from("media_assets")
     .select("id,object_path")
@@ -428,34 +429,36 @@ export async function deleteMenuItemMedia(formData: FormData) {
     .eq("approval_status", "draft")
     .eq("is_public", false)
     .maybeSingle();
-  if (!asset) redirect("/dashboard/menu?media_error=not-removable");
+  if (!asset) redirect("/dashboard/photos?media_error=not-removable");
 
   const { error: deleteError } = await supabase!.from("media_assets")
     .delete()
     .eq("id", asset.id)
     .eq("organization_id", membership.organization_id);
-  if (deleteError) redirect("/dashboard/menu?media_error=delete");
+  if (deleteError) redirect("/dashboard/photos?media_error=delete");
   await supabase!.storage.from("intake").remove([asset.object_path]);
 
   revalidatePath("/dashboard/menu");
+  revalidatePath("/dashboard/photos");
   revalidatePath("/ops/media");
-  redirect("/dashboard/menu?media_deleted=1");
+  redirect("/dashboard/photos?media_deleted=1");
 }
 
 export async function removeMenuItemImage(formData: FormData) {
   const { membership } = await requireMembership();
   const itemId = uuid.safeParse(formData.get("item_id"));
-  if (!itemId.success) redirect("/dashboard/menu?media_error=invalid");
+  if (!itemId.success) redirect("/dashboard/photos?media_error=invalid");
   const supabase = await createClient();
   const { error } = await supabase!.rpc("remove_menu_item_image", {
     p_organization_id: membership.organization_id,
     p_menu_item_id: itemId.data,
   });
-  if (error) redirect("/dashboard/menu?media_error=remove");
+  if (error) redirect("/dashboard/photos?media_error=remove");
   revalidatePath("/dashboard/menu");
+  revalidatePath("/dashboard/photos");
   revalidatePath("/dashboard/menu/preview");
   revalidatePath("/dashboard/menu/review");
-  redirect("/dashboard/menu?changed=item-photo-removed");
+  redirect("/dashboard/photos?changed=item-photo-removed");
 }
 
 export async function deleteBrandMedia(formData: FormData) {

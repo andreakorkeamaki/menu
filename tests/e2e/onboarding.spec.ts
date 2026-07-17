@@ -34,6 +34,9 @@ test.describe("operator to owner pilot flow", () => {
     );
     await expect(operatorPage.getByRole("heading", { name: "Crea un ristorante in pochi passaggi" }))
       .toBeVisible();
+    await operatorPage.goto("/dashboard");
+    await expect(operatorPage).toHaveURL(/\/ops$/);
+    await operatorPage.goto("/ops/new");
 
     await operatorPage.getByLabel("Organizzazione").fill("Ristorante pilota E2E SRL");
     await operatorPage.getByLabel("Nome pubblico").fill("Ristorante pilota E2E");
@@ -70,6 +73,8 @@ test.describe("operator to owner pilot flow", () => {
       "/dashboard",
     );
     await expect(ownerPage.getByRole("heading", { name: "Ristorante pilota E2E" })).toBeVisible();
+    await ownerPage.goto("/ops/restaurants");
+    await expect(ownerPage).toHaveURL(/\/dashboard$/);
 
     await ownerPage.goto("/dashboard/menu");
     const categoryForm = ownerPage.locator(".category-panel .inline-form");
@@ -85,8 +90,9 @@ test.describe("operator to owner pilot flow", () => {
     await dessertGroup.getByLabel("Prezzo").fill("7.50");
     await dessertGroup.getByRole("button", { name: "Aggiungi" }).click();
     await expect(ownerPage.getByRole("status")).toContainText("Piatto aggiunto in fondo");
-    const dessertCard = ownerPage.locator(".item-editor-card").filter({
-      has: ownerPage.locator('input[name="name"][value="Torta del test"]'),
+    await ownerPage.goto("/dashboard/photos");
+    const dessertCard = ownerPage.locator(".restaurant-photo-card").filter({
+      has: ownerPage.getByRole("heading", { name: "Torta del test", exact: true }),
     });
     await expect(dessertCard).toBeVisible();
     await dessertCard.locator(".item-media-panel > summary").click();
@@ -137,12 +143,14 @@ test.describe("operator to owner pilot flow", () => {
     await ownerPage.getByRole("button", { name: "Approva tutto" }).click();
     await expect(ownerPage.getByRole("status")).toContainText(/Approvate \d+ traduzioni/);
 
+    await ownerPage.goto("/dashboard/photos");
+    const approvedPhotoCard = ownerPage.locator(".restaurant-photo-card").filter({
+      has: ownerPage.getByRole("heading", { name: "Torta del test", exact: true }),
+    });
+    await expect(approvedPhotoCard.getByText("Approvata", { exact: true })).toBeVisible();
     await ownerPage.goto("/dashboard/menu");
     await expect(ownerPage.locator('input[name="name"][value="Polpetta del test"]')).toBeVisible();
-    const approvedDessertCard = ownerPage.locator(".item-editor-card").filter({
-      has: ownerPage.locator('input[name="name"][value="Torta del test"]'),
-    });
-    await expect(approvedDessertCard.locator(".item-media-panel > summary")).toContainText("Presente nella bozza");
+    await expect(ownerPage.getByRole("link", { name: "Apri la galleria foto →" })).toBeVisible();
     await ownerPage.getByRole("link", { name: "Controlla e pubblica" }).click();
     await expect(ownerPage.getByRole("heading", { name: "Controlla ciò che andrà online" })).toBeVisible();
     await expect(ownerPage.getByRole("heading", { name: "Pronta per la pubblicazione" })).toBeVisible();

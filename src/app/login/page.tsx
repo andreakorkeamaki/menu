@@ -19,9 +19,9 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
       </section>
       <section className="auth-panel auth-form-panel">
         <form action={signIn} className="stack-form">
-          <div><p className="eyebrow">Bentornato</p><h2>Accedi alla dashboard</h2></div>
+          <div><p className="eyebrow">Bentornato</p><h2>Accedi all’area riservata</h2></div>
           {params.error && <p className="form-error" role="alert">{errors[params.error] ?? "Accesso non riuscito."}</p>}
-          <input type="hidden" name="next" value={params.next ?? "/dashboard"} />
+          <input type="hidden" name="next" value={params.next ?? "/access"} />
           <label>Email<input name="email" type="email" autoComplete="email" required /></label>
           <label>Password<input name="password" type="password" minLength={8} autoComplete="current-password" required /></label>
           <button className="button button-dark">Accedi</button>

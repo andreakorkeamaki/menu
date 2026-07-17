@@ -43,9 +43,9 @@ describe("MenuEditor", () => {
     expect(html).toContain("Rimuovi piatto");
     expect(html).toContain("La versione online resterà invariata");
     expect(html).toContain("Questa categoria è vuota");
-    expect(html).toContain("Foto del piatto");
-    expect(html).toContain("Invia per la revisione");
-    expect(html).toContain("Studio immagini AI");
-    expect(html).toContain("Genera 1 immagine mancante");
+    expect(html).toContain("La galleria è separata dall’editor");
+    expect(html).toContain('href="/dashboard/photos"');
+    expect(html).not.toContain("Invia per la revisione");
+    expect(html).not.toContain("Studio immagini AI");
   });
 });

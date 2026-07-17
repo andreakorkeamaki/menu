@@ -18,7 +18,9 @@ export async function updateSession(request: NextRequest) {
   });
 
   const { data } = await supabase.auth.getClaims();
-  const protectedPath = request.nextUrl.pathname.startsWith("/dashboard") || request.nextUrl.pathname.startsWith("/ops");
+  const protectedPath = request.nextUrl.pathname.startsWith("/dashboard")
+    || request.nextUrl.pathname.startsWith("/ops")
+    || request.nextUrl.pathname === "/access";
   if (protectedPath && !data?.claims) {
     const target = request.nextUrl.clone();
     target.pathname = "/login";

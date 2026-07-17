@@ -34,7 +34,7 @@ export function MenuItemMediaUploader({
   return (
     <details className="item-media-panel">
       <summary>
-        <span>Foto del piatto</span>
+        <span>Foto del prodotto</span>
         <small>{isPending ? "In revisione" : currentImageUrl ? "Presente nella bozza" : "Da aggiungere"}</small>
       </summary>
       <div className="item-media-workspace">

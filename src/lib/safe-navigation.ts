@@ -1,6 +1,6 @@
 const SAFE_BASE_URL = "https://menuinterattivo.invalid";
 
-export function safeInternalPath(value: string | null | undefined, fallback = "/dashboard") {
+export function safeInternalPath(value: string | null | undefined, fallback = "/access") {
   if (!value || !value.startsWith("/") || value.startsWith("//") || value.startsWith("/\\")) {
     return fallback;
   }

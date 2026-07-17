@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { Brand } from "@/components/brand";
 import type { UserContext } from "@/lib/auth";
 import type { Membership } from "@/types/domain";
@@ -13,12 +12,14 @@ export function AppShell({ children, context, area, activeMembership }: { childr
   const dashboardLinks = [
     ["/dashboard", "Panoramica"],
     ["/dashboard/menu", "Menu"],
+    ["/dashboard/photos", "Foto"],
     ["/dashboard/translations", "Traduzioni"],
     ["/dashboard/site", "Sito e aspetto"],
     ["/dashboard/team", "Utenti"],
   ];
   const opsLinks = [
     ["/ops", "Coda onboarding"],
+    ["/ops/restaurants", "Ristoranti"],
     ["/ops/leads", "Richieste demo"],
     ["/ops/media", "Immagini"],
     ["/ops/new", "Nuovo ristorante"],
@@ -47,11 +48,6 @@ export function AppShell({ children, context, area, activeMembership }: { childr
         <nav aria-label={area === "ops" ? "Pannello operativo" : "Dashboard ristorante"}>
           <AppShellNav links={links} />
         </nav>
-        {context.isOperator && (area === "dashboard" || context.memberships.length > 0) && (
-          <Link className="mode-switch" href={area === "ops" ? "/dashboard" : "/ops"}>
-            {area === "ops" ? "Vai al ristorante" : "Pannello operatore"}
-          </Link>
-        )}
         <form action={signOut}><button className="sidebar-signout">Esci</button></form>
       </aside>
       <div className="app-main">
@@ -68,11 +64,6 @@ export function AppShell({ children, context, area, activeMembership }: { childr
           ) : null}
           <nav aria-label={area === "ops" ? "Navigazione operatore mobile" : "Navigazione ristorante mobile"}>
             <AppShellNav links={links} />
-            {context.isOperator && (area === "dashboard" || context.memberships.length > 0) && (
-              <Link className="mobile-mode-switch" href={area === "ops" ? "/dashboard" : "/ops"}>
-                {area === "ops" ? "Ristorante" : "Operatore"}
-              </Link>
-            )}
             <form action={signOut}><button className="mobile-signout">Esci</button></form>
           </nav>
         </header>
